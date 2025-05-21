@@ -15,6 +15,7 @@ class Layer_Dense:
                  bias_regularizer_l1=0, bias_regularizer_l2=0):
         # Random weights
         # Biases set to 0
+        self.n_neurons = n_neurons
         self.weights = 0.01 * np.random.randn(n_inputs, n_neurons)
         self.biases = np.zeros((1, n_neurons))
         # Set regularization strength
@@ -22,6 +23,9 @@ class Layer_Dense:
         self.weight_regularizer_l2 = weight_regularizer_l2
         self.bias_regularizer_l1 = bias_regularizer_l1
         self.bias_regularizer_l2 = bias_regularizer_l2
+        self.learnable_weights = self.weights.size
+        self.learnable_biases = self.biases.size
+        self.learnable_parameters = self.weights.size + self.biases.size
 
     # Computes the output of the layer. Illustration of dot product: 
     # https://upload.wikimedia.org/wikipedia/commons/b/bf/Fully_connected_neural_network_and_it%27s_expression_as_a_tensor_product.jpg 
@@ -411,9 +415,13 @@ class Model:
     def __init__(self):
         self.layers = []
         self.softmax_classifier_output = None
-
+        self.real_layers = []
     # Add objects to the model
     def add(self, layer):
+
+        if isinstance(layer, Layer_Dense) or isinstance(layer, Layer_Input):
+            self.real_layers.append(layer)
+
         self.layers.append(layer)
 
     # Set loss, optimizer and accuracy
@@ -421,6 +429,16 @@ class Model:
         self.loss = loss
         self.optimizer = optimizer
         self.accuracy = accuracy
+
+
+    def compute_vram_usage(self):
+        total_bytes = 0
+        for layer in self.trainable_layers:
+            weight_bytes = layer.weights.size * layer.weights.dtype.itemsize
+            bias_bytes = layer.biases.size * layer.biases.dtype.itemsize
+            total_bytes += weight_bytes + bias_bytes
+
+        return total_bytes
 
     # Finalize the model
     def finalize(self):
@@ -433,6 +451,10 @@ class Model:
 
         # Initialize a list containing trainable layers:
         self.trainable_layers = []
+
+        total_trainable_parameters = 0
+        total_trainable_weights = 0
+        total_trainable_biases = 0
 
         # Iterate the objects
         for i in range(layer_count):
@@ -463,6 +485,16 @@ class Model:
             # checking for weights is enough
             if hasattr(self.layers[i], 'weights'):
                 self.trainable_layers.append(self.layers[i])
+                total_trainable_biases += self.layers[i].learnable_biases
+                total_trainable_weights += self.layers[i].learnable_weights
+                total_trainable_parameters += self.layers[i].learnable_weights + self.layers[i].learnable_biases
+
+        vram_usage = self.compute_vram_usage()
+
+        
+        self.log_model_info()
+        print(f"Number of total trainable parameters: {total_trainable_parameters}\n\tof that weights: {total_trainable_weights}\n\tof that biases: {total_trainable_biases}")
+        print(f"Memory usage of model (in bytes): {vram_usage}")
 
         # Update loss object with trainable layers
         self.loss.remember_trainable_layers(
@@ -480,6 +512,14 @@ class Model:
             # and loss functions
             self.softmax_classifier_output = \
                 Activation_Softmax_Loss_CategoricalCrossentropy()
+
+    def log_model_info(self):
+        print("Model Info:")
+        print(f"Layer structure (excluding input layer):")
+
+        for i, layer in enumerate(self.real_layers):
+            print(f"Layer {i}:\tNumber of Neurons: {layer.n_neurons}" )
+
 
     # Train the model
     def train(self, X, y, *, epochs=1, print_every=1,
@@ -621,25 +661,43 @@ def load_titanic_dataset():
 X_train, y_train, X_test, y_test = load_titanic_dataset()
 
 # Instantiate the model
-model = Model()
 
-# Add layers
-model.add(Layer_Dense(10, 512))
-model.add(Activation_ReLU())
-model.add(Layer_Dropout(0.1))
-model.add(Layer_Dense(512, 2))
-model.add(Activation_Softmax())
+input_shape = X_train.shape
+input_shape = input_shape[1]
+output_classes = len(np.unique(y_train))
 
-# Set loss, optimizer and accuracy objects
-model.set(
-    loss=Loss_CategoricalCrossentropy(),
-    optimizer=Optimizer_SGD(),
-    accuracy=Accuracy_Categorical()
-)
+layers_and_neurons_per_layer = [
+    [32],
+    [64, 32],
+    [128, 64, 32],
+    [256, 128, 64],
+    [64, 64, 64]
 
-# Finalize the model
-model.finalize()
+]
+for layers_neurons in layers_and_neurons_per_layer:
+    model = Model()
+    layers = len(layers_neurons)
+    current_input_size = input_shape
+    for i, layer_size in enumerate(layers_neurons):
+        model.add(Layer_Dense(current_input_size, layer_size))
+        model.add(Activation_ReLU())
+        model.add(Layer_Dropout(0.1))
+        current_input_size = layer_size
 
-# Train the model
-model.train(X_train, y_train, validation_data=(X_test, y_test),
-            epochs=10000, print_every=100)
+
+    model.add(Layer_Dense(current_input_size, output_classes))
+    model.add(Activation_Softmax())
+
+    # Set loss, optimizer and accuracy objects
+    model.set(
+        loss=Loss_CategoricalCrossentropy(),
+        optimizer=Optimizer_SGD(),
+        accuracy=Accuracy_Categorical()
+    )
+
+    # Finalize the model
+    model.finalize()
+
+    # Train the model
+    model.train(X_train, y_train, validation_data=(X_test, y_test),
+                epochs=1000, print_every=100)
