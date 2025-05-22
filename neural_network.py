@@ -522,8 +522,7 @@ class Model:
 
 
     # Train the model
-    def train(self, X, y, *, epochs=1, print_every=1,
-              validation_data=None):
+    def train(self, X, y, *, epochs=1, print_every=1):
 
         # Initialize accuracy object
         self.accuracy.init(y)
@@ -564,28 +563,26 @@ class Model:
                       f'reg_loss: {regularization_loss:.3f}), ' +
                       f'lr: {self.optimizer.current_learning_rate}')
 
-        # If there is the validation data
-        if validation_data is not None:
+    def validate(self, validation_data):
+        # For better readability
+        X_val, y_val = validation_data
 
-            # For better readability
-            X_val, y_val = validation_data
+        # Perform the forward pass
+        output = self.forward(X_val, training=False)
 
-            # Perform the forward pass
-            output = self.forward(X_val, training=False)
+        # Calculate the loss
+        loss = self.loss.calculate(output, y_val)
 
-            # Calculate the loss
-            loss = self.loss.calculate(output, y_val)
-
-            # Get predictions and calculate an accuracy
-            predictions = self.output_layer_activation.predictions(
-                              output)
-            accuracy = self.accuracy.calculate(predictions, y_val)
+        # Get predictions and calculate an accuracy
+        predictions = self.output_layer_activation.predictions(
+                            output)
+        accuracy = self.accuracy.calculate(predictions, y_val)
 
 
-            # Print a summary
-            print(f'validation, ' +
-                  f'acc: {accuracy:.3f}, ' +
-                  f'loss: {loss:.3f}')
+        # Print a summary
+        print(f'validation, ' +
+                f'acc: {accuracy:.3f}, ' +
+                f'loss: {loss:.3f}')
 
     # Performs forward passes of all layers
     def forward(self, X, training):
@@ -696,8 +693,12 @@ for layers_neurons in layers_and_neurons_per_layer:
     )
 
     # Finalize the model
+    print("-----------------")
     model.finalize()
 
     # Train the model
-    model.train(X_train, y_train, validation_data=(X_test, y_test),
-                epochs=1000, print_every=100)
+    model.train(X_train, y_train, epochs=1000, print_every=100)
+
+    # Validate model on test set
+    model.validate((X_test, y_test))
+    print("-----------------\n")
