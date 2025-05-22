@@ -10,19 +10,12 @@ class Layer_Dense:
     A hidden layer in the Neural Network.
     """
 
-    def __init__(self, n_inputs, n_neurons,
-                 weight_regularizer_l1=0, weight_regularizer_l2=0,
-                 bias_regularizer_l1=0, bias_regularizer_l2=0):
+    def __init__(self, n_inputs, n_neurons):
         # Random weights
         # Biases set to 0
         self.n_neurons = n_neurons
         self.weights = 0.01 * np.random.randn(n_inputs, n_neurons)
         self.biases = np.zeros((1, n_neurons))
-        # Set regularization strength
-        self.weight_regularizer_l1 = weight_regularizer_l1
-        self.weight_regularizer_l2 = weight_regularizer_l2
-        self.bias_regularizer_l1 = bias_regularizer_l1
-        self.bias_regularizer_l2 = bias_regularizer_l2
         self.learnable_weights = self.weights.size
         self.learnable_biases = self.biases.size
         self.learnable_parameters = self.weights.size + self.biases.size
@@ -38,27 +31,6 @@ class Layer_Dense:
     def backward(self, dvalues):
         self.dweights = np.dot(self.inputs.T, dvalues)
         self.dbiases = np.sum(dvalues, axis=0, keepdims=True)
-
-
-        # Gradients on regularization
-        # L1 on weights
-        if self.weight_regularizer_l1 > 0:
-            dL1 = np.ones_like(self.weights)
-            dL1[self.weights < 0] = -1
-            self.dweights += self.weight_regularizer_l1 * dL1
-        # L2 on weights
-        if self.weight_regularizer_l2 > 0:
-            self.dweights += 2 * self.weight_regularizer_l2 * \
-                             self.weights
-        # L1 on biases
-        if self.bias_regularizer_l1 > 0:
-            dL1 = np.ones_like(self.biases)
-            dL1[self.biases < 0] = -1
-            self.dbiases += self.bias_regularizer_l1 * dL1
-        # L2 on biases
-        if self.bias_regularizer_l2 > 0:
-            self.dbiases += 2 * self.bias_regularizer_l2 * \
-                            self.biases
 
         # Gradient on values
         self.dinputs = np.dot(dvalues, self.weights.T)
@@ -243,41 +215,6 @@ class Optimizer_SGD:
 # Common loss class
 class Loss:
 
-    # Regularization loss calculation
-    def regularization_loss(self):
-
-        # 0 by default
-        regularization_loss = 0
-
-        # Calculate regularization loss
-        # iterate all trainable layers
-        for layer in self.trainable_layers:
-
-            # L1 regularization - weights
-            # calculate only when factor greater than 0
-            if layer.weight_regularizer_l1 > 0:
-                regularization_loss += layer.weight_regularizer_l1 * \
-                                       np.sum(np.abs(layer.weights))
-
-            # L2 regularization - weights
-            if layer.weight_regularizer_l2 > 0:
-                regularization_loss += layer.weight_regularizer_l2 * \
-                                       np.sum(layer.weights *
-                                              layer.weights)
-
-            # L1 regularization - biases
-            # calculate only when factor greater than 0
-            if layer.bias_regularizer_l1 > 0:
-                regularization_loss += layer.bias_regularizer_l1 * \
-                                       np.sum(np.abs(layer.biases))
-
-            # L2 regularization - biases
-            if layer.bias_regularizer_l2 > 0:
-                regularization_loss += layer.bias_regularizer_l2 * \
-                                       np.sum(layer.biases *
-                                              layer.biases)
-
-        return regularization_loss
 
     # Set/remember trainable layers
     def remember_trainable_layers(self, trainable_layers):
@@ -286,7 +223,7 @@ class Loss:
 
     # Calculates the data and regularization losses
     # given model output and ground truth values
-    def calculate(self, output, y, *, include_regularization=False):
+    def calculate(self, output, y):
 
         # Calculate sample losses
         sample_losses = self.forward(output, y)
@@ -294,12 +231,8 @@ class Loss:
         # Calculate mean loss
         data_loss = np.mean(sample_losses)
 
-        # If just data loss - return it
-        if not include_regularization:
-            return data_loss
-
         # Return the data and regularization losses
-        return data_loss, self.regularization_loss()
+        return data_loss
 
 
 # Cross-entropy loss
@@ -535,10 +468,9 @@ class Model:
 
 
             # Calculate loss
-            data_loss, regularization_loss = \
-                self.loss.calculate(output, y,
-                                    include_regularization=True)
-            loss = data_loss + regularization_loss
+            data_loss = \
+                self.loss.calculate(output, y)
+            loss = data_loss
 
             # Get predictions and calculate an accuracy
             predictions = self.output_layer_activation.predictions(
@@ -560,7 +492,6 @@ class Model:
                       f'acc: {accuracy:.3f}, ' +
                       f'loss: {loss:.3f} (' +
                       f'data_loss: {data_loss:.3f}, ' +
-                      f'reg_loss: {regularization_loss:.3f}), ' +
                       f'lr: {self.optimizer.current_learning_rate}')
 
     def validate(self, validation_data, output_file=None):
@@ -748,7 +679,6 @@ for layers_neurons in layers_and_neurons_per_layer:
     for i, layer_size in enumerate(layers_neurons):
         model.add(Layer_Dense(current_input_size, layer_size))
         model.add(Activation_ReLU())
-        model.add(Layer_Dropout(0.1))
         current_input_size = layer_size
 
 
