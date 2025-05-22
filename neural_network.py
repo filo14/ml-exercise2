@@ -563,7 +563,7 @@ class Model:
                       f'reg_loss: {regularization_loss:.3f}), ' +
                       f'lr: {self.optimizer.current_learning_rate}')
 
-    def validate(self, validation_data):
+    def validate(self, validation_data, output_file=None):
         # For better readability
         X_val, y_val = validation_data
 
@@ -577,7 +577,9 @@ class Model:
         predictions = self.output_layer_activation.predictions(
                             output)
         accuracy = self.accuracy.calculate(predictions, y_val)
-
+        if output_file is not None:
+            np.savetxt(f'{output_file}', predictions, delimiter=',', fmt='%d', header='Predicted_Survived', comments='')
+            print(f"Predictions saved to '{output_file}'")
 
         # Print a summary
         print(f'validation, ' +
@@ -671,6 +673,7 @@ layers_and_neurons_per_layer = [
     [64, 64, 64]
 
 ]
+count = 0
 for layers_neurons in layers_and_neurons_per_layer:
     model = Model()
     layers = len(layers_neurons)
@@ -700,5 +703,6 @@ for layers_neurons in layers_and_neurons_per_layer:
     model.train(X_train, y_train, epochs=1000, print_every=100)
 
     # Validate model on test set
-    model.validate((X_test, y_test))
+    model.validate((X_test, y_test), output_file=f"predictions{count}.csv")
+    count += 1
     print("-----------------\n")
