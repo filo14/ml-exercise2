@@ -657,9 +657,25 @@ def load_titanic_dataset():
 
     return X_train, y_train, X_test, y_test
 
-X_train, y_train, X_test, y_test = load_titanic_dataset()
+def load_german_credit_data_dataset():
+    X_train_df = pd.read_csv('./german_credit_data/german_X_train_scaled.csv')
+    X_train = X_train_df.to_numpy().astype('float32')
 
-# Instantiate the model
+    y_train_df = pd.read_csv('./german_credit_data/german_y_train.csv')
+    y_train = y_train_df['credit_rating'].to_numpy().astype('int32').reshape(-1)
+
+    X_test_df = pd.read_csv('./german_credit_data/german_X_test_scaled.csv')
+    X_test = X_test_df.to_numpy().astype('float32')
+
+    y_test_df = pd.read_csv('./german_credit_data/german_y_test.csv')
+    y_test = y_test_df['credit_rating'].to_numpy().astype('int32').reshape(-1)
+
+    return X_train, y_train, X_test, y_test
+
+
+# Titanic dataset Model
+
+X_train, y_train, X_test, y_test = load_titanic_dataset()
 
 input_shape = X_train.shape
 input_shape = input_shape[1]
@@ -703,6 +719,57 @@ for layers_neurons in layers_and_neurons_per_layer:
     model.train(X_train, y_train, epochs=1000, print_every=100)
 
     # Validate model on test set
-    model.validate((X_test, y_test), output_file=f"predictions{count}.csv")
+    model.validate((X_test, y_test), output_file=f"predictions{count}_titanic.csv")
+    count += 1
+    print("-----------------\n")
+
+
+# German Credit Data dataset Model
+
+X_train, y_train, X_test, y_test = load_german_credit_data_dataset()
+
+input_shape = X_train.shape
+input_shape = input_shape[1]
+output_classes = len(np.unique(y_train))
+
+layers_and_neurons_per_layer = [
+    [32],
+    [64, 32],
+    [128, 64, 32],
+    [256, 128, 64],
+    [64, 64, 64]
+
+]
+count = 0
+for layers_neurons in layers_and_neurons_per_layer:
+    model = Model()
+    layers = len(layers_neurons)
+    current_input_size = input_shape
+    for i, layer_size in enumerate(layers_neurons):
+        model.add(Layer_Dense(current_input_size, layer_size))
+        model.add(Activation_ReLU())
+        model.add(Layer_Dropout(0.1))
+        current_input_size = layer_size
+
+
+    model.add(Layer_Dense(current_input_size, output_classes))
+    model.add(Activation_Softmax())
+
+    # Set loss, optimizer and accuracy objects
+    model.set(
+        loss=Loss_CategoricalCrossentropy(),
+        optimizer=Optimizer_SGD(),
+        accuracy=Accuracy_Categorical()
+    )
+
+    # Finalize the model
+    print("-----------------")
+    model.finalize()
+
+    # Train the model
+    model.train(X_train, y_train, epochs=1000, print_every=100)
+
+    # Validate model on test set
+    model.validate((X_test, y_test), output_file=f"predictions{count}_german.csv")
     count += 1
     print("-----------------\n")
