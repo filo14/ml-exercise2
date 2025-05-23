@@ -29,47 +29,12 @@ class Layer_Dense:
         self.output = np.dot(inputs, self.weights) + self.biases
 
 
-    # Performs the backward pass, calculating gradients for weights, biases, and inputs. These gradients will be used by the optimizer.
+    # Computes the derivatives from with dvalues from Activation Function
     def backward(self, dvalues):
+
         self.dweights = np.dot(self.inputs.T, dvalues)
         self.dbiases = np.sum(dvalues, axis=0, keepdims=True)
-
-        # Gradient on values
         self.dinputs = np.dot(dvalues, self.weights.T)
-
-
-# Dropout
-class Layer_Dropout:
-    """
-    A hidden layer in the Neural Network, that randomly drops out neuron outputs to reduce overfitting.
-    """
-
-    def __init__(self, rate):
-        # Store rate, we invert it as for example for dropout
-        # of 0.1 we need success rate of 0.9
-        self.rate = 1 - rate
-
-    # Forward pass
-    def forward(self, inputs, training):
-        # Save input values
-        self.inputs = inputs
-
-        # If not in the training mode - return values
-        if not training:
-            self.output = inputs.copy()
-            return
-
-        # Generate and save scaled mask
-        self.binary_mask = np.random.binomial(1, self.rate,
-                           size=inputs.shape) / self.rate
-        # Apply mask to output values
-        self.output = inputs * self.binary_mask
-
-
-    # Backward pass
-    def backward(self, dvalues):
-        # Gradient on values
-        self.dinputs = dvalues * self.binary_mask
 
 
 class Layer_Input:
@@ -182,61 +147,16 @@ class Optimizer_SGD:
 
     # Initialize optimizer - set settings,
     # learning rate of 1. is default for this optimizer
-    def __init__(self, learning_rate=1., decay=0., momentum=0.):
+    def __init__(self, learning_rate=1.):
         self.learning_rate = learning_rate
         self.current_learning_rate = learning_rate
-        self.decay = decay
-        self.iterations = 0
-        self.momentum = momentum
-
-    # Call once before any parameter updates
-    def pre_update_params(self):
-        if self.decay:
-            self.current_learning_rate = self.learning_rate * \
-                (1. / (1. + self.decay * self.iterations))
 
     # Update parameters
     def update_params(self, layer):
 
-        # If we use momentum
-        if self.momentum:
+        layer.weights += -self.current_learning_rate * layer.dweights
+        layer.biases +=  -self.current_learning_rate * layer.dbiases
 
-            # If layer does not contain momentum arrays, create them
-            # filled with zeros
-            if not hasattr(layer, 'weight_momentums'):
-                layer.weight_momentums = np.zeros_like(layer.weights)
-                # If there is no momentum array for weights
-                # The array doesn't exist for biases yet either.
-                layer.bias_momentums = np.zeros_like(layer.biases)
-            # Build weight updates with momentum - take previous
-            # updates multiplied by retain factor and update with
-            # current gradients
-            weight_updates = \
-                self.momentum * layer.weight_momentums - \
-                self.current_learning_rate * layer.dweights
-            layer.weight_momentums = weight_updates
-
-            # Build bias updates
-            bias_updates = \
-                self.momentum * layer.bias_momentums - \
-                self.current_learning_rate * layer.dbiases
-            layer.bias_momentums = bias_updates
-
-        # Vanilla SGD updates (as before momentum update)
-        else:
-            weight_updates = -self.current_learning_rate * \
-                             layer.dweights
-            bias_updates = -self.current_learning_rate * \
-                           layer.dbiases
-
-        # Update weights and biases using either
-        # vanilla or momentum updates
-        layer.weights += weight_updates
-        layer.biases += bias_updates
-
-    # Call once after any parameter updates
-    def post_update_params(self):
-        self.iterations += 1
 
 # Common loss class
 class Loss:
@@ -384,6 +304,9 @@ class Model:
         if isinstance(layer, Activation_ReLU) or isinstance(layer, Activation_Sigmoid):
             self.activation_class = layer.__class__.__name__
 
+        if isinstance(layer, Activation_Softmax):
+            self.output_activation_class = layer.__class__.__name__
+
         self.layers.append(layer)
 
     # Set loss, optimizer and accuracy
@@ -483,6 +406,8 @@ class Model:
             print(f"Layer {i}:\tNumber of Neurons: {layer.n_neurons}" )
 
         print(f"Model Activation Function: {self.activation_class}" )
+        print(f"Model Output Activation Function: {self.output_activation_class}" )
+        
     # Train the model
     def train(self, X, y, *, epochs=1, print_every=1):
 
@@ -495,11 +420,9 @@ class Model:
             # Perform the forward pass
             output = self.forward(X, training=True)
 
-
             # Calculate loss
-            data_loss = \
-                self.loss.calculate(output, y)
-            loss = data_loss
+            loss = self.loss.calculate(output, y)
+ 
 
             # Get predictions and calculate an accuracy
             predictions = self.output_layer_activation.predictions(
@@ -510,18 +433,15 @@ class Model:
             self.backward(output, y)
 
             # Optimize (update parameters)
-            self.optimizer.pre_update_params()
             for layer in self.trainable_layers:
                 self.optimizer.update_params(layer)
-            self.optimizer.post_update_params()
 
             # Print a summary
             if not epoch % print_every:
                 print(f'epoch: {epoch}, ' +
                       f'acc: {accuracy:.3f}, ' +
-                      f'loss: {loss:.3f} (' +
-                      f'data_loss: {data_loss:.3f}, ' +
-                      f'lr: {self.optimizer.current_learning_rate}')
+                      f'loss: {loss:.3f},' +
+                      f'learning rate: {self.optimizer.current_learning_rate}')
 
     def validate(self, validation_data, output_file=None):
         # For better readability
