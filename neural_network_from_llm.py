@@ -1,9 +1,16 @@
 from __future__ import annotations
 import itertools
+import time  
 from typing import Callable, List, Dict, Tuple, Iterable, Sequence, Optional
+import load_german_credit_data
+import load_titanic_data
+
 import pandas as pd
 import numpy as np
-from sklearn.metrics import classification_report
+from sklearn.metrics import (
+    precision_score,  
+    recall_score,     
+)
 from sklearn.model_selection import train_test_split
 
 DTYPE = np.float32  # switch to float64 for extra precision
@@ -24,35 +31,44 @@ def _one_hot(y: np.ndarray, num_classes: int) -> np.ndarray:
 class Activation:
     def __call__(self, x: np.ndarray) -> np.ndarray:  # alias for forward
         return self.forward(x)
+
     def forward(self, x: np.ndarray) -> np.ndarray:  # noqa: D401
         raise NotImplementedError
+
     def backward(self, grad_out: np.ndarray) -> np.ndarray:
         raise NotImplementedError
+
 
 class ReLU(Activation):
     def forward(self, x: np.ndarray) -> np.ndarray:
         self._mask = x > 0  # bool mask saves RAM over raw tensor
         return x * self._mask
+
     def backward(self, grad_out: np.ndarray) -> np.ndarray:
         return grad_out * self._mask
+
 
 class Sigmoid(Activation):
     def forward(self, x: np.ndarray) -> np.ndarray:
         out = 1.0 / (1.0 + np.exp(-x))
         self._cache = out
         return out
+
     def backward(self, grad_out: np.ndarray) -> np.ndarray:
         s = self._cache
         return grad_out * s * (1.0 - s)
+
 
 class Tanh(Activation):
     def forward(self, x: np.ndarray) -> np.ndarray:
         out = np.tanh(x)
         self._cache = out
         return out
+
     def backward(self, grad_out: np.ndarray) -> np.ndarray:
         t = self._cache
         return grad_out * (1.0 - t ** 2)
+
 
 # -----------------------------------------------------------------------------
 # Dense layer
@@ -66,20 +82,25 @@ class Dense:
         self.b = np.zeros(out_features, dtype=DTYPE)
         self.dW = np.zeros_like(self.W)
         self.db = np.zeros_like(self.b)
+
     def forward(self, x: np.ndarray) -> np.ndarray:
         self._x = x  # cache input for grad
         return x @ self.W + self.b
+
     def backward(self, grad_out: np.ndarray) -> np.ndarray:
         x = self._x
         self.dW[...] = x.T @ grad_out / x.shape[0]
         self.db[...] = grad_out.mean(axis=0)
         return grad_out @ self.W.T
+
     @property
     def params(self):
         return [self.W, self.b]
+
     @property
     def grads(self):
         return [self.dW, self.db]
+
 
 # -----------------------------------------------------------------------------
 # Losses
@@ -88,8 +109,10 @@ class Dense:
 class Loss:  # base
     def forward(self, y_pred, y_true):
         raise NotImplementedError
+
     def backward(self, y_pred, y_true):
         raise NotImplementedError
+
 
 class CrossEntropyLoss(Loss):
     def forward(self, y_pred: np.ndarray, y_true: np.ndarray) -> float:
@@ -100,17 +123,21 @@ class CrossEntropyLoss(Loss):
         loss = -np.log(self._probs[np.arange(y_true.size), y_true]).mean()
         self._y_true = y_true
         return loss
+
     def backward(self, *_):
         grad = self._probs.copy()
         grad[np.arange(self._y_true.size), self._y_true] -= 1.0
         return grad / self._y_true.size
 
+
 class MSELoss(Loss):
     def forward(self, y_pred, y_true):
         self._diff = y_pred - y_true
         return np.square(self._diff).mean()
+
     def backward(self, *_):
         return 2.0 * self._diff / self._diff.shape[0]
+
 
 # -----------------------------------------------------------------------------
 # Optimizer
@@ -121,13 +148,16 @@ class SGD:
         self.params, self.grads = params, grads
         self.lr, self.momentum = lr, momentum
         self._velocity = [np.zeros_like(p) for p in params]
+
     def step(self):
         for p, g, v in zip(self.params, self.grads, self._velocity):
             v[...] = self.momentum * v + g  # correct update rule
             p[...] -= self.lr * v
+
     def zero_grad(self):
         for g in self.grads:
             g[...] = 0.0
+
 
 # -----------------------------------------------------------------------------
 # NeuralNetwork wrapper
@@ -210,7 +240,7 @@ class NeuralNetwork:
         for ep in range(epochs):
             idx = np.random.permutation(N)
             for start in range(0, N, batch_size):
-                xb, yb = X[idx[start:start + batch_size]], y[idx[start:start + batch_size]]
+                xb, yb = X[idx[start : start + batch_size]], y[idx[start : start + batch_size]]
                 logits = self.forward(xb)
                 loss = self.loss_fn.forward(logits, yb)
                 grad = self.loss_fn.backward(logits, yb)
@@ -241,6 +271,7 @@ class NeuralNetwork:
     def vram_usage(self, bytes_per_param=4):
         return self.parameter_count() * bytes_per_param / 1024 ** 2
 
+
 # -----------------------------------------------------------------------------
 # Grid search convenience
 # -----------------------------------------------------------------------------
@@ -250,14 +281,19 @@ def grid_search(X_train, y_train, X_val, y_val, param_grid: Dict[str, Iterable],
     best_acc, best_model, best_cfg = -np.inf, None, {}
     for values in itertools.product(*param_grid.values()):
         cfg = dict(zip(keys, values))
-        model = NeuralNetwork(layer_sizes=cfg["layer_sizes"], activations=cfg["activations"], num_classes=num_classes, lr=cfg.get("lr", 1e-2), momentum=cfg.get("momentum", 0.0))
+        model = NeuralNetwork(
+            layer_sizes=cfg["layer_sizes"],
+            activations=cfg["activations"],
+            num_classes=num_classes,
+            lr=cfg.get("lr", 1e-2),
+            momentum=cfg.get("momentum", 0.0),
+        )
         model.fit(X_train, y_train, epochs=max_epochs, verbose=False)
         acc = model.score(X_val, y_val)
         if acc > best_acc:
             best_acc, best_model, best_cfg = acc, model, cfg
             print(f"New best val acc {acc:.4f} with cfg {cfg}")
     return best_model, best_cfg
-
 
 
 # -----------------------------------------------------------------------------
@@ -286,7 +322,7 @@ def load_titanic_dataset():
 
 def main():
     # ------------------------------------------------------------------ data
-    X_train, y_train, X_test, y_test = load_titanic_dataset()
+    X_train, y_train, X_test, y_test = load_titanic_data.load_titanic_dataset()
 
     # 20‑% of the official training portion becomes a validation hold‑out
     X_tr, X_val, y_tr, y_val = train_test_split(
@@ -308,6 +344,9 @@ def main():
         momentum=0.9,
     )
 
+    # Measure training time
+    start_ts = time.perf_counter()
+
     history = model.fit(
         X_tr,
         y_tr,
@@ -318,15 +357,89 @@ def main():
         verbose=True,
     )
 
+    train_time_ms = (time.perf_counter() - start_ts) * 1000
+
     # -------------------------------------------------------------- evaluate
+    print(f"\nTotal training time: {train_time_ms:.2f} ms")
     print("\nValidation accuracy:", model.score(X_val, y_val))
     print("Test accuracy:", model.score(X_test, y_test))
     print("Total parameters:", model.parameter_count())
     print("Estimated VRAM usage (float32):", f"{model.vram_usage():.2f} MB")
 
-    # Detailed report for the submission slides
+    # Precision & Recall on validation set
+    y_val_pred = model.predict(X_val)
+    val_precision = precision_score(y_val, y_val_pred)
+    val_recall = recall_score(y_val, y_val_pred)
+    print(f"Validation Precision: {val_precision:.4f}")
+    print(f"Validation Recall: {val_recall:.4f}")
+
+    # Detailed report for the submission slides (Test set)
     y_pred = model.predict(X_test)
-    print("\nClassification report (Test set):\n", classification_report(y_test, y_pred, target_names=["Not survived", "Survived"]))
+    test_precision = precision_score(y_test, y_pred)
+    test_recall = recall_score(y_test, y_pred)
+    print(f"\nTest Precision: {test_precision:.4f}")
+    print(f"Test Recall: {test_recall:.4f}")
+
+
+
+# ------------------------------------------------------------------ data
+    X_train, y_train, X_test, y_test = load_german_credit_data.load_german_credit_data_dataset()
+
+    # 20‑% of the official training portion becomes a validation hold‑out
+    X_tr, X_val, y_tr, y_val = train_test_split(
+        X_train,
+        y_train,
+        test_size=0.2,
+        stratify=y_train,
+        random_state=42,
+    )
+
+    # --------------------------------------------------------- model & train
+    # Two hidden layers (64 → 32) with ReLU activations proved a good
+    # trade‑off between capacity and over‑fitting in quick grid‑search pilots.
+    model = NeuralNetwork(
+        layer_sizes=[64, 32],
+        activations=["relu", "relu"],
+        num_classes=2,
+        lr=1e-2,
+        momentum=0.9,
+    )
+
+    # Measure training time
+    start_ts = time.perf_counter()
+
+    history = model.fit(
+        X_tr,
+        y_tr,
+        epochs=2000,
+        batch_size=32,
+        X_val=X_val,
+        y_val=y_val,
+        verbose=True,
+    )
+
+    train_time_ms = (time.perf_counter() - start_ts) * 1000
+
+    # -------------------------------------------------------------- evaluate
+    print(f"\nTotal training time: {train_time_ms:.2f} ms")
+    print("\nValidation accuracy:", model.score(X_val, y_val))
+    print("Test accuracy:", model.score(X_test, y_test))
+    print("Total parameters:", model.parameter_count())
+    print("Estimated VRAM usage (float32):", f"{model.vram_usage():.2f} MB")
+
+    # Precision & Recall on validation set
+    y_val_pred = model.predict(X_val)
+    val_precision = precision_score(y_val, y_val_pred)
+    val_recall = recall_score(y_val, y_val_pred)
+    print(f"Validation Precision: {val_precision:.4f}")
+    print(f"Validation Recall: {val_recall:.4f}")
+
+    # Detailed report for the submission slides (Test set)
+    y_pred = model.predict(X_test)
+    test_precision = precision_score(y_test, y_pred)
+    test_recall = recall_score(y_test, y_pred)
+    print(f"\nTest Precision: {test_precision:.4f}")
+    print(f"Test Recall: {test_recall:.4f}")
 
 
 
