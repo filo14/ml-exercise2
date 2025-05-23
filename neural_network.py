@@ -381,6 +381,9 @@ class Model:
         if isinstance(layer, Layer_Dense) or isinstance(layer, Layer_Input):
             self.real_layers.append(layer)
 
+        if isinstance(layer, Activation_ReLU) or isinstance(layer, Activation_Sigmoid):
+            self.activation_class = layer.__class__.__name__
+
         self.layers.append(layer)
 
     # Set loss, optimizer and accuracy
@@ -479,6 +482,7 @@ class Model:
         for i, layer in enumerate(self.real_layers):
             print(f"Layer {i}:\tNumber of Neurons: {layer.n_neurons}" )
 
+        print(f"Model Activation Function: {self.activation_class}" )
     # Train the model
     def train(self, X, y, *, epochs=1, print_every=1):
 
@@ -678,7 +682,7 @@ class Grid_Search:
                         # Set loss, optimizer, and accuracy objects for the model
                         model.set(
                             loss=Loss_CategoricalCrossentropy(),
-                            optimizer=Optimizer_SGD(learning_rate=learning_rate), # Use the selected learning rate
+                            optimizer=Optimizer_SGD(learning_rate=learning_rate),
                             accuracy=Accuracy_Categorical()
                         )
 
