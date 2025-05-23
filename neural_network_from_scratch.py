@@ -3,6 +3,10 @@ import numpy as np
 import pandas as pd
 import sys
 
+import load_german_credit_data
+import load_titanic_data
+
+
 class Layer_Dense:
     """
     A hidden layer in the Neural Network.
@@ -404,38 +408,6 @@ class Model:
         for layer in reversed(self.layers):
             layer.backward(layer.next.dinputs)
 
-def load_titanic_dataset():
-    folder = "./titanic-preprocessing"
-    X_train_df = pd.read_csv(f'{folder}/titanic_X_train_scaled.csv')
-    X_train = X_train_df.to_numpy().astype('float32')
-
-    y_train_df = pd.read_csv(f'{folder}/titanic_y_train.csv')
-    y_train = y_train_df['Survived'].to_numpy().astype('int32').reshape(-1)
-
-    X_test_df = pd.read_csv(f'{folder}/titanic_X_test_scaled.csv')
-    X_test = X_test_df.to_numpy().astype('float32')
-
-    y_test_df = pd.read_csv(f'{folder}/titanic_y_test.csv')
-    y_test = y_test_df['Survived'].to_numpy().astype('int32').reshape(-1)
-
-    return X_train, y_train, X_test, y_test
-
-def load_german_credit_data_dataset():
-    folder = "./german_credit_data-preprocessing"
-    X_train_df = pd.read_csv(f'{folder}/german_X_train_scaled.csv')
-    X_train = X_train_df.to_numpy().astype('float32')
-
-    y_train_df = pd.read_csv(f'{folder}/german_y_train.csv')
-    y_train = y_train_df['credit_rating'].to_numpy().astype('int32').reshape(-1)
-
-    X_test_df = pd.read_csv(f'{folder}/german_X_test_scaled.csv')
-    X_test = X_test_df.to_numpy().astype('float32')
-
-    y_test_df = pd.read_csv(f'{folder}/german_y_test.csv')
-    y_test = y_test_df['credit_rating'].to_numpy().astype('int32').reshape(-1)
-
-    return X_train, y_train, X_test, y_test
-
 class Grid_Search:
     """
     Performs a grid search over specified hyperparameters for a neural network model.
@@ -507,7 +479,7 @@ class Grid_Search:
             print(f.read())
 
 
-X_train, y_train, X_test, y_test = load_titanic_dataset()
+X_train, y_train, X_test, y_test = load_titanic_data.load_titanic_dataset()
 
 neurons_per_layer = [
     [32],
@@ -522,10 +494,10 @@ epochs = [100, 500, 1000]
 grid_search = Grid_Search()
 grid_search.run_grid_search(X_train, y_train, X_test, y_test, neurons_per_layer, epochs, 
                             {'ReLU': Activation_ReLU, 'Sigmoid': Activation_Sigmoid}, 
-                            [1], output_file_prefix="./titanic-data/predictions")
+                            [1], output_file_prefix="./titanic-predictions/prediction")
 
 
-X_train, y_train, X_test, y_test = load_german_credit_data_dataset()
+X_train, y_train, X_test, y_test = load_german_credit_data.load_german_credit_data_dataset()
 
 neurons_per_layer = [
     [32],
@@ -540,4 +512,4 @@ epochs = [100, 500, 1000]
 grid_search = Grid_Search()
 grid_search.run_grid_search(X_train, y_train, X_test, y_test, neurons_per_layer, epochs, 
                             {'ReLU': Activation_ReLU, 'Sigmoid': Activation_Sigmoid}, 
-                            [1], output_file_prefix="./german-credit-data/predictions")
+                            [1], output_file_prefix="./german-credit-predictions/prediction")

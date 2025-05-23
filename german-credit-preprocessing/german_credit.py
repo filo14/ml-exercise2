@@ -1,9 +1,9 @@
 import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 
 german_credit_train = pd.read_csv('german.data', sep=' ', header=None)
 german_credit_train.columns = ['checking_account_status', 'duration', 'credit_history', 'purpose', 'credit_amount', 'savings_account', 'employment_status', 'installment_rate', 'personal_status_sex', 'other_debtors', 'present_residence', 'property', 'age', 'other_installment_plans', 'housing', 'number_of_existing_credits', 'job', 'dependents', 'telephone', 'foreign_worker', 'credit_rating']
-
-from sklearn.model_selection import train_test_split
 
 german_credit_train_encoded = german_credit_train.drop(['purpose', 'personal_status_sex'], axis=1)
 german_credit_train_encoded = german_credit_train_encoded.drop(['present_residence', 'dependents'], axis=1)
@@ -23,8 +23,6 @@ X = german_credit_train_encoded.drop(['credit_rating'],axis=1)
 y = german_credit_train_encoded['credit_rating'] - 1
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.2, random_state = 38, stratify = y)
-
-from sklearn.preprocessing import StandardScaler
 
 scaler = StandardScaler()
 X_train = scaler.fit_transform(X_train) # stores the information of the X_train data in the scaler

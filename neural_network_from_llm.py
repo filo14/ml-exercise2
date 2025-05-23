@@ -266,10 +266,10 @@ def grid_search(X_train, y_train, X_val, y_val, param_grid: Dict[str, Iterable],
 
 def load_titanic_dataset():
     """Return train/test splits (already scaled) for the Kaggle Titanic dataset."""
-    X_train_df = pd.read_csv("./titanic/titanic_X_train_scaled.csv")
-    y_train_df = pd.read_csv("./titanic/titanic_y_train.csv")
-    X_test_df = pd.read_csv("./titanic/titanic_X_test_scaled.csv")
-    y_test_df = pd.read_csv("./titanic/titanic_y_test.csv")
+    X_train_df = pd.read_csv("./titanic-preprocessing/titanic_X_train_scaled.csv")
+    y_train_df = pd.read_csv("./titanic-preprocessing/titanic_y_train.csv")
+    X_test_df = pd.read_csv("./titanic-preprocessing/titanic_X_test_scaled.csv")
+    y_test_df = pd.read_csv("./titanic-preprocessing/titanic_y_test.csv")
 
     X_train = X_train_df.to_numpy(dtype=DTYPE)
     y_train = y_train_df["Survived"].to_numpy(dtype=np.int32).reshape(-1)
