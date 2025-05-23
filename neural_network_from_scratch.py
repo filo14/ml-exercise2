@@ -205,10 +205,6 @@ class Accuracy_Categorical:
     Calculates the accuracy of model output for categorical values compared to ground truth values.
     """
 
-    def __init__(self, binary=False):
-        self.binary = binary
-
-
     def calculate(self, predictions, y):
 
         comparisons = self.compare(predictions, y)
@@ -217,9 +213,6 @@ class Accuracy_Categorical:
         return accuracy
 
     def precision(self, predictions, y, class_index=1):
-        if not self.binary and len(y.shape) == 2:
-            y = np.argmax(y, axis=1)
-
         true_positives = np.sum((predictions == class_index) & (y == class_index))
         predicted_positives = np.sum(predictions == class_index)
 
@@ -228,9 +221,6 @@ class Accuracy_Categorical:
         return true_positives / predicted_positives
 
     def recall(self, predictions, y, class_index=1):
-        if not self.binary and len(y.shape) == 2:
-            y = np.argmax(y, axis=1)
-
         true_positives = np.sum((predictions == class_index) & (y == class_index))
         actual_positives = np.sum(y == class_index)
 
@@ -239,8 +229,6 @@ class Accuracy_Categorical:
         return true_positives / actual_positives
 
     def compare(self, predictions, y):
-        if not self.binary and len(y.shape) == 2:
-            y = np.argmax(y, axis=1)
         return predictions == y
     
 class Model:
