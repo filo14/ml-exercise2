@@ -2,6 +2,7 @@ import numpy as np
 import nnfs
 from nnfs.datasets import spiral_data
 import pandas as pd
+import sys
 
 nnfs.init()
 
@@ -148,6 +149,30 @@ class Activation_Softmax:
     # Calculate predictions for outputs
     def predictions(self, outputs):
         return np.argmax(outputs, axis=1)
+    
+class Activation_Sigmoid:
+    """
+    Sigmoid Activation class.
+    """
+
+
+    # Forward pass
+    def forward(self, inputs, training):
+        # Remember input values
+        self.inputs = inputs
+        # Sigmoid formula: 1 / (1 + e^(-inputs))
+        self.output = 1 / (1 + np.exp(-inputs))
+
+    # Backward pass
+    def backward(self, dvalues):
+        # Derivative of sigmoid: output * (1 - output)
+        # We use self.output from the forward pass
+        self.dinputs = dvalues * (self.output * (1 - self.output))
+
+    # Calculate predictions for outputs
+    def predictions(self, outputs):
+        return outputs
+
 
 class Optimizer_SGD:
     """
@@ -453,7 +478,6 @@ class Model:
         for i, layer in enumerate(self.real_layers):
             print(f"Layer {i}:\tNumber of Neurons: {layer.n_neurons}" )
 
-
     # Train the model
     def train(self, X, y, *, epochs=1, print_every=1):
 
@@ -510,12 +534,13 @@ class Model:
         accuracy = self.accuracy.calculate(predictions, y_val)
         if output_file is not None:
             np.savetxt(f'{output_file}', predictions, delimiter=',', fmt='%d', header='Predicted_Survived', comments='')
-            print(f"Predictions saved to '{output_file}'")
 
         # Print a summary
         print(f'validation, ' +
                 f'acc: {accuracy:.3f}, ' +
                 f'loss: {loss:.3f}')
+        
+        return accuracy
 
     # Performs forward passes of all layers
     def forward(self, X, training):
@@ -603,25 +628,119 @@ def load_german_credit_data_dataset():
 
     return X_train, y_train, X_test, y_test
 
+class Grid_Search:
+    """
+    Performs a grid search over specified hyperparameters for a neural network model.
+    Assumes that Model, Layer_Dense, Activation_ReLU, Activation_Sigmoid,
+    Activation_Softmax, Layer_Dropout, Loss_CategoricalCrossentropy,
+    Optimizer_SGD, and Accuracy_Categorical classes are defined elsewhere.
+    """
+
+    def run_grid_search(self,
+                        X_train, y_train, X_test, y_test,
+                        neurons_per_layer_options,
+                        epochs_options,
+                        hidden_activation_classes, # Dictionary: {'Name': ActivationClass}
+                        learning_rate_options,
+                        print_every_train=100,
+                        output_file_prefix="predictions"):
+
+        input_shape = X_train.shape[1]
+        output_classes = len(np.unique(y_train))
+
+        count = 0
+        highest_accuracy = 0
+        highest_output = ""
+        
+        # Iterating through all combinations of hyperparameters
+        original_stdout = sys.stdout
+        for layers_neurons in neurons_per_layer_options:
+            for epochs_train in epochs_options: # Use epochs_train to avoid conflict with outer 'epochs' list
+                for activation_name, Activation_Class in hidden_activation_classes.items():
+                    for learning_rate in learning_rate_options:
+
+                        # Initialize a new model for each combination
+                        model = Model()
+                        current_input_size = input_shape
+
+                        # Add hidden layers based on the current combination
+                        for i, layer_size in enumerate(layers_neurons):
+                            model.add(Layer_Dense(current_input_size, layer_size))
+                            model.add(Activation_Class()) # Use the selected hidden activation
+                            current_input_size = layer_size
+
+                        # Add the output layer
+                        model.add(Layer_Dense(current_input_size, output_classes))
+                        model.add(Activation_Softmax())
+
+                        # Set loss, optimizer, and accuracy objects for the model
+                        model.set(
+                            loss=Loss_CategoricalCrossentropy(),
+                            optimizer=Optimizer_SGD(learning_rate=learning_rate), # Use the selected learning rate
+                            accuracy=Accuracy_Categorical()
+                        )
+
+                        output_file=f"{output_file_prefix}_{count}_L{'-'.join(map(str, layers_neurons))}_E{epochs_train}_A{activation_name}_LR{str(learning_rate).replace('.', '')}"
+                        with open(f"{output_file}.txt", 'w') as f:
+                            sys.stdout = f
+
+                            # Finalize the model (e.g., link layers for backprop)
+                            model.finalize()
+
+                            # Train the model with the current epochs setting
+                            model.train(X_train, y_train, epochs=epochs_train, print_every=print_every_train)
+
+                            # Validate model on test set
+                            # The output_file name now includes combination details for uniqueness
+                            accuracy = model.validate((X_test, y_test),
+                                            output_file=f"{output_file}.csv")
+                            
+                            if (accuracy > highest_accuracy):
+                                highest_accuracy = accuracy
+                                highest_output = output_file
+                            
+                            count += 1
+                        sys.stdout = original_stdout
+
+        with open(f"{highest_output}.txt", "r") as f:
+            print("Model with highest accuracy: ")
+            print(f.read())
 
 # Titanic dataset Model
 
 X_train, y_train, X_test, y_test = load_titanic_dataset()
 
-input_shape = X_train.shape
-input_shape = input_shape[1]
-output_classes = len(np.unique(y_train))
-
-layers_and_neurons_per_layer = [
+neurons_per_layer = [
     [32],
     [64, 32],
     [128, 64, 32],
     [256, 128, 64],
     [64, 64, 64]
-
 ]
+
+epochs = [100, 500, 1000]
+
+grid_search = Grid_Search()
+grid_search.run_grid_search(X_train, y_train, X_test, y_test, neurons_per_layer, epochs, 
+                            {'ReLU': Activation_ReLU, 'Sigmoid': Activation_Sigmoid}, 
+                            [1], output_file_prefix="titanic_predictions")
+
+input_shape = X_train.shape
+input_shape = input_shape[1]
+output_classes = len(np.unique(y_train))
+
+neurons_per_layer = [
+    [32],
+    [64, 32],
+    [128, 64, 32],
+    [256, 128, 64],
+    [64, 64, 64]
+]
+
+epochs = [100, 500, 1000]
+
 count = 0
-for layers_neurons in layers_and_neurons_per_layer:
+for layers_neurons in neurons_per_layer:
     model = Model()
     layers = len(layers_neurons)
     current_input_size = input_shape
@@ -653,7 +772,6 @@ for layers_neurons in layers_and_neurons_per_layer:
     model.validate((X_test, y_test), output_file=f"predictions{count}_titanic.csv")
     count += 1
     print("-----------------\n")
-
 
 # German Credit Data dataset Model
 
