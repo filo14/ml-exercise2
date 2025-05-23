@@ -1,3 +1,4 @@
+import time
 import numpy as np
 import nnfs
 from nnfs.datasets import spiral_data
@@ -661,6 +662,7 @@ class Grid_Search:
 
                         # Initialize a new model for each combination
                         model = Model()
+                        start_time = time.time()
                         current_input_size = input_shape
 
                         # Add hidden layers based on the current combination
@@ -694,6 +696,9 @@ class Grid_Search:
                             # The output_file name now includes combination details for uniqueness
                             accuracy = model.validate((X_test, y_test),
                                             output_file=f"{output_file}.csv")
+                            end_time = time.time()
+
+                            print(f"Processing time: {((end_time - start_time)* 1000):.3f} ms")
                             
                             if (accuracy > highest_accuracy):
                                 highest_accuracy = accuracy
