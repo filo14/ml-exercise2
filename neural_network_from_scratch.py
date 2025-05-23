@@ -177,29 +177,6 @@ class Loss_CategoricalCrossentropy:
         # Normalize gradient
         self.dinputs = self.dinputs / samples
 
-
-# Softmax classifier - combined Softmax activation
-# and cross-entropy loss for faster backward step
-class Activation_Softmax_Loss_CategoricalCrossentropy():
-
-    # Backward pass
-    def backward(self, dvalues, y_true):
-
-        # Number of samples
-        samples = len(dvalues)
-
-        # If labels are one-hot encoded,
-        # turn them into discrete values
-        if len(y_true.shape) == 2:
-            y_true = np.argmax(y_true, axis=1)
-
-        # Copy so we can safely modify
-        self.dinputs = dvalues.copy()
-        # Calculate gradient
-        self.dinputs[range(samples), y_true] -= 1
-        # Normalize gradient
-        self.dinputs = self.dinputs / samples
-
 class Accuracy_Categorical:
     """
     Calculates the accuracy of model output for categorical values compared to ground truth values.
@@ -311,18 +288,6 @@ class Model:
         print(f"Number of total trainable parameters: {total_trainable_parameters}\n\tof that weights: {total_trainable_weights}\n\tof that biases: {total_trainable_biases}")
         print(f"Memory usage of model (in bytes): {vram_usage}")
 
-        # If output activation is Softmax and
-        # loss function is Categorical Cross-Entropy
-        # create an object of combined activation
-        # and loss function containing
-        # faster gradient calculation
-        if isinstance(self.layers[-1], Activation_Softmax) and \
-           isinstance(self.loss, Loss_CategoricalCrossentropy):
-            # Create an object of combined activation
-            # and loss functions
-            self.softmax_classifier_output = \
-                Activation_Softmax_Loss_CategoricalCrossentropy()
-
     def log_model_info(self):
         print("Model Info:")
         print(f"Layer structure (excluding input layer):")
@@ -390,36 +355,9 @@ class Model:
 
     def backward(self, output, y):
 
-        if self.softmax_classifier_output is not None:
-            # First call backward method
-            # on the combined activation/loss
-            # this will set dinputs property
-            self.softmax_classifier_output.backward(output, y)
-
-            # Since we'll not call backward method of the last layer
-            # which is Softmax activation
-            # as we used combined activation/loss
-            # object, let's set dinputs in this object
-            self.layers[-1].dinputs = \
-                self.softmax_classifier_output.dinputs
-
-            # Call backward method going through
-            # all the objects but last
-            # in reversed order passing dinputs as a parameter
-            for layer in reversed(self.layers[:-1]):
-                layer.backward(layer.next.dinputs)
-
-            return
-
-
-        # First call backward method on the loss
-        # this will set dinputs property that the last
-        # layer will try to access shortly
-        self.loss.backward(output, y)
-
-        # Call backward method going through all the objects
-        # in reversed order passing dinputs as a parameter
-        for layer in reversed(self.layers):
+        self.loss.backward(output, y) # calcualte derivative for loss
+        
+        for layer in reversed(self.layers): # last layer points to the loss object
             layer.backward(layer.next.dinputs)
 
 class Grid_Search:
