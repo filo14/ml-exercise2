@@ -193,6 +193,28 @@ class Accuracy_Categorical:
 
         return accuracy
 
+    def precision(self, predictions, y, class_index=1):
+        if not self.binary and len(y.shape) == 2:
+            y = np.argmax(y, axis=1)
+
+        true_positives = np.sum((predictions == class_index) & (y == class_index))
+        predicted_positives = np.sum(predictions == class_index)
+
+        if predicted_positives == 0:
+            return 0.0
+        return true_positives / predicted_positives
+
+    def recall(self, predictions, y, class_index=1):
+        if not self.binary and len(y.shape) == 2:
+            y = np.argmax(y, axis=1)
+
+        true_positives = np.sum((predictions == class_index) & (y == class_index))
+        actual_positives = np.sum(y == class_index)
+
+        if actual_positives == 0:
+            return 0.0
+        return true_positives / actual_positives
+
     def compare(self, predictions, y):
         if not self.binary and len(y.shape) == 2:
             y = np.argmax(y, axis=1)
@@ -320,13 +342,17 @@ class Model:
 
         predictions = self.output_layer_activation.predictions(output)
         accuracy = self.accuracy.calculate(predictions, y_val)
+        precision = self.accuracy.precision(predictions, y_val)
+        recall = self.accuracy.recall(predictions, y_val)
 
         if output_file is not None:
             np.savetxt(f'{output_file}', predictions, delimiter=',', fmt='%d', header='Predicted_Survived', comments='')
 
-        print(f'validation, ' +
-                f'acc: {accuracy:.3f}, ' +
-                f'loss: {loss:.3f}')
+        print(f'Test Set Results: ' +
+                f'Accuracy: {accuracy:.3f}, ' +
+                f'Precision: {precision:.3f}, ' +
+                f'Recall: {recall:.3f}, ' +
+                f'Loss: {loss:.3f}')
         
         return accuracy
 
