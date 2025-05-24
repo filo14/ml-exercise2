@@ -1,18 +1,29 @@
+"""Minimal pure‑NumPy feed‑forward neural network with grid‑search.
+Each hidden layer uses the same activation (default: ReLU);
+The final layer is Softmax and the loss function is
+cross‑entropy operating *on the soft‑max probabilities*.
+
+Run this file directly to reproduce the Titanic and German‑Credit
+experiments from the exercise – no external deep‑learning libraries
+required, only NumPy, pandas and scikit‑learn.
+"""
 from __future__ import annotations
+
 import itertools
-import time  
-from typing import Callable, List, Dict, Tuple, Iterable, Sequence, Optional
+import time
+from typing import Callable, Dict, Iterable, List, Sequence, Tuple
+
+import numpy as np
+import pandas as pd
+from sklearn.metrics import precision_score, recall_score
+from sklearn.model_selection import train_test_split
+
 import load_german_credit_data
 import load_titanic_data
 
-import pandas as pd
-import numpy as np
-from sklearn.metrics import (
-    precision_score,  
-    recall_score,     
-)
-from sklearn.model_selection import train_test_split
-
+# -----------------------------------------------------------------------------
+# Globals
+# -----------------------------------------------------------------------------
 DTYPE = np.float32  # switch to float64 for extra precision
 
 # -----------------------------------------------------------------------------
@@ -25,23 +36,25 @@ def _one_hot(y: np.ndarray, num_classes: int) -> np.ndarray:
     return out
 
 # -----------------------------------------------------------------------------
-# Activations
+# Activation base class and concrete activations
 # -----------------------------------------------------------------------------
 
 class Activation:
-    def __call__(self, x: np.ndarray) -> np.ndarray:  # alias for forward
+    """Interface for activations (must implement forward/backward)."""
+
+    def __call__(self, x: np.ndarray) -> np.ndarray:
         return self.forward(x)
 
-    def forward(self, x: np.ndarray) -> np.ndarray:  # noqa: D401
+    def forward(self, x: np.ndarray) -> np.ndarray:  # pragma: no cover
         raise NotImplementedError
 
-    def backward(self, grad_out: np.ndarray) -> np.ndarray:
+    def backward(self, grad_out: np.ndarray) -> np.ndarray:  # pragma: no cover
         raise NotImplementedError
 
 
 class ReLU(Activation):
     def forward(self, x: np.ndarray) -> np.ndarray:
-        self._mask = x > 0  # bool mask saves RAM over raw tensor
+        self._mask = x > 0  # boolean mask – saves memory vs. storing x itself
         return x * self._mask
 
     def backward(self, grad_out: np.ndarray) -> np.ndarray:
@@ -50,28 +63,32 @@ class ReLU(Activation):
 
 class Sigmoid(Activation):
     def forward(self, x: np.ndarray) -> np.ndarray:
-        out = 1.0 / (1.0 + np.exp(-x))
-        self._cache = out
+        out = 1.0 / (1.0 + np.exp(-x, dtype=DTYPE))
+        self._out = out
         return out
 
     def backward(self, grad_out: np.ndarray) -> np.ndarray:
-        s = self._cache
+        s = self._out
         return grad_out * s * (1.0 - s)
 
 
-class Tanh(Activation):
+class Softmax(Activation):
+    """Softmax layer – kept separate so the user sees an explicit softmax."""
+
     def forward(self, x: np.ndarray) -> np.ndarray:
-        out = np.tanh(x)
-        self._cache = out
-        return out
+        shifted = x - np.max(x, axis=1, keepdims=True)
+        exps = np.exp(shifted, dtype=DTYPE)
+        self._out = exps / np.sum(exps, axis=1, keepdims=True)
+        return self._out
 
     def backward(self, grad_out: np.ndarray) -> np.ndarray:
-        t = self._cache
-        return grad_out * (1.0 - t ** 2)
-
+        # Jacobian‑vector product for softmax
+        s = self._out
+        dot = np.sum(grad_out * s, axis=1, keepdims=True)
+        return s * (grad_out - dot)
 
 # -----------------------------------------------------------------------------
-# Dense layer
+# Dense / fully connected layer
 # -----------------------------------------------------------------------------
 
 class Dense:
@@ -84,15 +101,16 @@ class Dense:
         self.db = np.zeros_like(self.b)
 
     def forward(self, x: np.ndarray) -> np.ndarray:
-        self._x = x  # cache input for grad
+        self._x = x  # cache for backward
         return x @ self.W + self.b
 
     def backward(self, grad_out: np.ndarray) -> np.ndarray:
         x = self._x
-        self.dW[...] = x.T @ grad_out / x.shape[0]
+        self.dW[...] = (x.T @ grad_out) / x.shape[0]
         self.db[...] = grad_out.mean(axis=0)
         return grad_out @ self.W.T
 
+    # expose params / grads for optimisers
     @property
     def params(self):
         return [self.W, self.b]
@@ -101,112 +119,101 @@ class Dense:
     def grads(self):
         return [self.dW, self.db]
 
-
 # -----------------------------------------------------------------------------
 # Losses
 # -----------------------------------------------------------------------------
 
 class Loss:  # base
-    def forward(self, y_pred, y_true):
+    def forward(self, y_pred, y_true):  # pragma: no cover
         raise NotImplementedError
 
-    def backward(self, y_pred, y_true):
+    def backward(self, y_pred, y_true):  # pragma: no cover
         raise NotImplementedError
 
 
 class CrossEntropyLoss(Loss):
+    """Cross‑entropy that EXPECTS *probabilities* (softmax outputs)."""
+
     def forward(self, y_pred: np.ndarray, y_true: np.ndarray) -> float:
-        # shift for stability
-        logits = y_pred - y_pred.max(axis=1, keepdims=True)
-        self._probs = np.exp(logits)
-        self._probs /= self._probs.sum(axis=1, keepdims=True)
-        loss = -np.log(self._probs[np.arange(y_true.size), y_true]).mean()
+        eps = 1e-9
+        probs = np.clip(y_pred, eps, 1.0)
+        loss = -np.log(probs[np.arange(y_true.size), y_true]).mean()
+        self._probs = probs
         self._y_true = y_true
         return loss
 
-    def backward(self, *_):
+    def backward(self, *_):  # returns dL/dp where p are probabilities
         grad = self._probs.copy()
         grad[np.arange(self._y_true.size), self._y_true] -= 1.0
         return grad / self._y_true.size
 
-
-class MSELoss(Loss):
-    def forward(self, y_pred, y_true):
-        self._diff = y_pred - y_true
-        return np.square(self._diff).mean()
-
-    def backward(self, *_):
-        return 2.0 * self._diff / self._diff.shape[0]
-
-
 # -----------------------------------------------------------------------------
-# Optimizer
+# Optimiser – SGD + optional momentum
 # -----------------------------------------------------------------------------
 
 class SGD:
-    def __init__(self, params: List[np.ndarray], grads: List[np.ndarray], lr: float = 1e-2, momentum: float = 0.0):
+    def __init__(self, params: List[np.ndarray], grads: List[np.ndarray], *, lr: float = 1e-2, momentum: float = 0.0):
         self.params, self.grads = params, grads
         self.lr, self.momentum = lr, momentum
         self._velocity = [np.zeros_like(p) for p in params]
 
     def step(self):
         for p, g, v in zip(self.params, self.grads, self._velocity):
-            v[...] = self.momentum * v + g  # correct update rule
+            v[...] = self.momentum * v + g
             p[...] -= self.lr * v
 
     def zero_grad(self):
         for g in self.grads:
             g[...] = 0.0
 
-
 # -----------------------------------------------------------------------------
-# NeuralNetwork wrapper
+# Neural‑network wrapper
 # -----------------------------------------------------------------------------
 
 class NeuralNetwork:
     def __init__(
         self,
         layer_sizes: Sequence[int],
-        activations: Sequence[str | Activation],
-        num_classes: int,
         *,
-        loss: str | Loss = "cross_entropy",
+        activation: str | Activation = "relu",
+        num_classes: int,
         lr: float = 1e-2,
         momentum: float = 0.0,
         rng: np.random.Generator | None = None,
     ):
-        # map string -> activation objects
-        if isinstance(activations[0], str):
-            act_map = {"relu": ReLU, "sigmoid": Sigmoid, "tanh": Tanh}
-            acts = [act_map[a.lower()]() for a in activations]
+        # map string -> activation class
+        if isinstance(activation, str):
+            act_map = {"relu": ReLU, "sigmoid": Sigmoid}
+            hidden_act_cls = act_map[activation.lower()]
         else:
-            acts = list(activations)
-        assert len(acts) == len(layer_sizes), "Need one activation per hidden layer"
+            hidden_act_cls = type(activation)
 
-        # store config and mark for deferred build
-        self._cfg = (layer_sizes, acts, num_classes, rng)
+        self._hidden_act_cls = hidden_act_cls
+        self._layer_sizes = list(layer_sizes)
+        self._num_classes = num_classes
+        self._rng = rng or np.random.default_rng()
+
+        # will be built lazily once input dimension known
         self._deferred = True
         self.layers: List[Dense | Activation] = []
+        self.loss_fn = CrossEntropyLoss()
+        self.optimizer = SGD([], [], lr=lr, momentum=momentum)  # placeholder, replaced after build
 
-        # create dummy optimizer so attributes exist; will be replaced later
-        self.optimizer = SGD([], [], lr=lr, momentum=momentum)
-
-        self.loss_fn = CrossEntropyLoss() if loss == "cross_entropy" else MSELoss() if isinstance(loss, str) else loss
-
-    # ---------------------------------------------------------------
+    # ------------------------------------------------------------------ helpers
     def _materialise_layers(self, in_features: int):
         if not self._deferred:
             return
-        layer_sizes, acts, num_classes, rng = self._cfg
         prev = in_features
         layers: List[Dense | Activation] = []
-        for hid, act in zip(layer_sizes, acts):
-            layers.append(Dense(prev, hid, rng=rng))
-            layers.append(act)
+        for hid in self._layer_sizes:
+            layers.append(Dense(prev, hid, rng=self._rng))
+            layers.append(self._hidden_act_cls())  # *new* instance per layer!
             prev = hid
-        layers.append(Dense(prev, num_classes, rng=rng))
-        self.layers = layers
-        # rebuild optimizer parameter lists
+        # output layer + softmax
+        layers.append(Dense(prev, self._num_classes, rng=self._rng))
+        layers.append(Softmax())
+
+        # expose parameters to optimiser
         params, grads = [], []
         for l in layers:
             if isinstance(l, Dense):
@@ -214,44 +221,50 @@ class NeuralNetwork:
                 grads.extend(l.grads)
         self.optimizer.params[:] = params
         self.optimizer.grads[:] = grads
-        self.optimizer._velocity = [np.zeros_like(p) for p in params]  # reset velocity
+        self.optimizer._velocity = [np.zeros_like(p) for p in params]
+
+        self.layers = layers
         self._deferred = False
 
-    # ---------------------------------------------------------------
+    # ------------------------------------------------------------ forward pass
     def forward(self, x: np.ndarray) -> np.ndarray:
         if self._deferred:
             self._materialise_layers(x.shape[1])
         out = x
         for layer in self.layers:
-            out = layer.forward(out) if hasattr(layer, "forward") else layer(out)
+            out = layer.forward(out)
         return out
 
-    # ---------------------------------------------------------------
+    # ----------------------------------------------------------- backward pass
     def backward(self, loss_grad: np.ndarray):
         grad = loss_grad
         for layer in reversed(self.layers):
             grad = layer.backward(grad)
 
-    # ---------------------------------------------------------------
-    def fit(self, X, y, *, epochs=100, batch_size=None, X_val=None, y_val=None, verbose=True):
+    # ----------------------------------------------------------------- training
+    def fit(self, X, y, *, epochs: int = 100, batch_size: int | None = None, X_val=None, y_val=None, verbose: bool = True):
         N = X.shape[0]
         batch_size = batch_size or N
         history = {"loss": [], "val_loss": []}
         for ep in range(epochs):
             idx = np.random.permutation(N)
             for start in range(0, N, batch_size):
-                xb, yb = X[idx[start : start + batch_size]], y[idx[start : start + batch_size]]
-                logits = self.forward(xb)
-                loss = self.loss_fn.forward(logits, yb)
-                grad = self.loss_fn.backward(logits, yb)
+                xb = X[idx[start : start + batch_size]]
+                yb = y[idx[start : start + batch_size]]
+
+                probs = self.forward(xb)
+                loss = self.loss_fn.forward(probs, yb)
+                grad = self.loss_fn.backward(probs, yb)
                 self.backward(grad)
                 self.optimizer.step()
                 self.optimizer.zero_grad()
+
             history["loss"].append(loss)
             if X_val is not None:
-                v_logits = self.forward(X_val)
-                v_loss = self.loss_fn.forward(v_logits, y_val)
+                v_probs = self.forward(X_val)
+                v_loss = self.loss_fn.forward(v_probs, y_val)
                 history["val_loss"].append(v_loss)
+
             if verbose and (ep % max(1, epochs // 10) == 0 or ep == epochs - 1):
                 msg = f"Epoch {ep + 1}/{epochs}: loss={history['loss'][-1]:.4f}"
                 if X_val is not None:
@@ -259,6 +272,7 @@ class NeuralNetwork:
                 print(msg)
         return history
 
+    # --------------------------------------------------------------- utilities
     def predict(self, X):
         return self.forward(X).argmax(axis=1)
 
@@ -268,22 +282,30 @@ class NeuralNetwork:
     def parameter_count(self):
         return sum(p.size for p in self.optimizer.params)
 
-    def vram_usage(self, bytes_per_param=4):
-        return self.parameter_count() * bytes_per_param / 1024 ** 2
-
+    def vram_usage(self, bytes_per_param: int = 4):
+        return self.parameter_count() * bytes_per_param / 1024.0  # KiB
 
 # -----------------------------------------------------------------------------
-# Grid search convenience
+# Grid‑search helper
 # -----------------------------------------------------------------------------
 
-def grid_search(X_train, y_train, X_val, y_val, param_grid: Dict[str, Iterable], *, num_classes, max_epochs=100):
+def grid_search(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_val: np.ndarray,
+    y_val: np.ndarray,
+    param_grid: Dict[str, Iterable],
+    *,
+    num_classes: int,
+    max_epochs: int = 100,
+):
     keys = list(param_grid)
     best_acc, best_model, best_cfg = -np.inf, None, {}
     for values in itertools.product(*param_grid.values()):
         cfg = dict(zip(keys, values))
         model = NeuralNetwork(
             layer_sizes=cfg["layer_sizes"],
-            activations=cfg["activations"],
+            activation=cfg.get("activation", "relu"),
             num_classes=num_classes,
             lr=cfg.get("lr", 1e-2),
             momentum=cfg.get("momentum", 0.0),
@@ -295,9 +317,8 @@ def grid_search(X_train, y_train, X_val, y_val, param_grid: Dict[str, Iterable],
             print(f"New best val acc {acc:.4f} with cfg {cfg}")
     return best_model, best_cfg
 
-
 # -----------------------------------------------------------------------------
-# Data loader – identical to the snippet provided by the exercise sheet
+# Data‑loader – identical to the snippet provided by the exercise sheet
 # -----------------------------------------------------------------------------
 
 def load_titanic_dataset():
@@ -315,132 +336,72 @@ def load_titanic_dataset():
 
     return X_train, y_train, X_test, y_test
 
+# -----------------------------------------------------------------------------
+# Experiment helper
+# -----------------------------------------------------------------------------
+
+def run_experiment(
+    name: str,
+    loader_fn: Callable[[], Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+    *,
+    seed: int = 42,
+):
+    print(f"\n\n========== {name} ==========")
+
+    # 1) ---------------------------------------------------------------- data
+    X_train, y_train, X_test, y_test = loader_fn()
+    X_tr, X_val, y_tr, y_val = train_test_split(
+        X_train,
+        y_train,
+        test_size=0.2,
+        stratify=y_train,
+        random_state=seed,
+    )
+
+    # 2) ----------------------------------------------------------- grid search
+    param_grid = {
+        "layer_sizes": [[64, 32], [128, 64, 32], [64, 64]],
+        "activation": ["relu"],
+        "lr": [1e-2, 5e-3],
+        "momentum": [0.0, 0.9],
+    }
+
+    start = time.perf_counter()
+    best_model, best_cfg = grid_search(
+        X_tr,
+        y_tr,
+        X_val,
+        y_val,
+        param_grid,
+        num_classes=2 if name == "Titanic" else 2,
+        max_epochs=500,
+    )
+    gsearch_time = (time.perf_counter() - start) * 1_000
+    print(f"Grid‑search done in {gsearch_time:,.0f} ms")
+    print("Best configuration:", best_cfg)
+
+    # 3) ------------------------------------------------------------- evaluate
+    print("\nValidation accuracy:", best_model.score(X_val, y_val))
+    print("Test accuracy      :", best_model.score(X_test, y_test))
+    print("Total parameters   :", best_model.parameter_count())
+    print("VRAM (float32)     :", f"{best_model.vram_usage():.2f} KiB")
+
+    y_val_pred = best_model.predict(X_val)
+    y_test_pred = best_model.predict(X_test)
+    print(
+        f"Validation precision / recall: {precision_score(y_val, y_val_pred):.4f} / {recall_score(y_val, y_val_pred):.4f}"
+    )
+    print(
+        f"Test precision / recall      : {precision_score(y_test, y_test_pred):.4f} / {recall_score(y_test, y_test_pred):.4f}"
+    )
 
 # -----------------------------------------------------------------------------
-# Main experiment
+# Main entry point
 # -----------------------------------------------------------------------------
 
 def main():
-    # ------------------------------------------------------------------ data
-    X_train, y_train, X_test, y_test = load_titanic_data.load_titanic_dataset()
-
-    # 20‑% of the official training portion becomes a validation hold‑out
-    X_tr, X_val, y_tr, y_val = train_test_split(
-        X_train,
-        y_train,
-        test_size=0.2,
-        stratify=y_train,
-        random_state=42,
-    )
-
-    # --------------------------------------------------------- model & train
-    # Two hidden layers (64 → 32) with ReLU activations proved a good
-    # trade‑off between capacity and over‑fitting in quick grid‑search pilots.
-    model = NeuralNetwork(
-        layer_sizes=[64, 32],
-        activations=["relu", "relu"],
-        num_classes=2,
-        lr=1e-2,
-        momentum=0.9,
-    )
-
-    # Measure training time
-    start_ts = time.perf_counter()
-
-    history = model.fit(
-        X_tr,
-        y_tr,
-        epochs=2000,
-        batch_size=32,
-        X_val=X_val,
-        y_val=y_val,
-        verbose=True,
-    )
-
-    train_time_ms = (time.perf_counter() - start_ts) * 1000
-
-    # -------------------------------------------------------------- evaluate
-    print(f"\nTotal training time: {train_time_ms:.2f} ms")
-    print("\nValidation accuracy:", model.score(X_val, y_val))
-    print("Test accuracy:", model.score(X_test, y_test))
-    print("Total parameters:", model.parameter_count())
-    print("Estimated VRAM usage (float32):", f"{model.vram_usage():.2f} MB")
-
-    # Precision & Recall on validation set
-    y_val_pred = model.predict(X_val)
-    val_precision = precision_score(y_val, y_val_pred)
-    val_recall = recall_score(y_val, y_val_pred)
-    print(f"Validation Precision: {val_precision:.4f}")
-    print(f"Validation Recall: {val_recall:.4f}")
-
-    # Detailed report for the submission slides (Test set)
-    y_pred = model.predict(X_test)
-    test_precision = precision_score(y_test, y_pred)
-    test_recall = recall_score(y_test, y_pred)
-    print(f"\nTest Precision: {test_precision:.4f}")
-    print(f"Test Recall: {test_recall:.4f}")
-
-
-
-# ------------------------------------------------------------------ data
-    X_train, y_train, X_test, y_test = load_german_credit_data.load_german_credit_data_dataset()
-
-    # 20‑% of the official training portion becomes a validation hold‑out
-    X_tr, X_val, y_tr, y_val = train_test_split(
-        X_train,
-        y_train,
-        test_size=0.2,
-        stratify=y_train,
-        random_state=42,
-    )
-
-    # --------------------------------------------------------- model & train
-    # Two hidden layers (64 → 32) with ReLU activations proved a good
-    # trade‑off between capacity and over‑fitting in quick grid‑search pilots.
-    model = NeuralNetwork(
-        layer_sizes=[64, 32],
-        activations=["relu", "relu"],
-        num_classes=2,
-        lr=1e-2,
-        momentum=0.9,
-    )
-
-    # Measure training time
-    start_ts = time.perf_counter()
-
-    history = model.fit(
-        X_tr,
-        y_tr,
-        epochs=2000,
-        batch_size=32,
-        X_val=X_val,
-        y_val=y_val,
-        verbose=True,
-    )
-
-    train_time_ms = (time.perf_counter() - start_ts) * 1000
-
-    # -------------------------------------------------------------- evaluate
-    print(f"\nTotal training time: {train_time_ms:.2f} ms")
-    print("\nValidation accuracy:", model.score(X_val, y_val))
-    print("Test accuracy:", model.score(X_test, y_test))
-    print("Total parameters:", model.parameter_count())
-    print("Estimated VRAM usage (float32):", f"{model.vram_usage():.2f} MB")
-
-    # Precision & Recall on validation set
-    y_val_pred = model.predict(X_val)
-    val_precision = precision_score(y_val, y_val_pred)
-    val_recall = recall_score(y_val, y_val_pred)
-    print(f"Validation Precision: {val_precision:.4f}")
-    print(f"Validation Recall: {val_recall:.4f}")
-
-    # Detailed report for the submission slides (Test set)
-    y_pred = model.predict(X_test)
-    test_precision = precision_score(y_test, y_pred)
-    test_recall = recall_score(y_test, y_pred)
-    print(f"\nTest Precision: {test_precision:.4f}")
-    print(f"Test Recall: {test_recall:.4f}")
-
+    run_experiment("Titanic", load_titanic_data.load_titanic_dataset)
+    run_experiment("German Credit", load_german_credit_data.load_german_credit_data_dataset)
 
 
 if __name__ == "__main__":
