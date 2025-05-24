@@ -135,30 +135,14 @@ class Loss_CategoricalCrossentropy:
 
         return np.mean(sample_losses)
     def forward(self, y_pred, y_true):
+        # print("Hello again", file=sys.__stdout__)
+        # print(y_pred, file=sys.__stdout__)
 
         samples = len(y_pred)
 
-        # Clip data to prevent division by 0
-        # Clip both sides to not drag mean towards any value
-        # y_pred_clipped = np.clip(y_pred, 1e-7, 1 - 1e-7)
-        y_pred_clipped = y_pred
+        correct_confidences_for_true_value = y_pred[range(samples), y_true]
 
-        # Probabilities for target values -
-        # only if categorical labels
-        if len(y_true.shape) == 1:
-            correct_confidences = y_pred_clipped[
-                range(samples),
-                y_true
-            ]
-
-        # Mask values - only for one-hot encoded labels
-        elif len(y_true.shape) == 2:
-            correct_confidences = np.sum(
-                y_pred_clipped * y_true,
-                axis=1
-            )
-
-        negative_log_likelihoods = -np.log(correct_confidences)
+        negative_log_likelihoods = -np.log(correct_confidences_for_true_value)
         return negative_log_likelihoods
 
     def backward(self, model_output, y_true):
@@ -170,6 +154,7 @@ class Loss_CategoricalCrossentropy:
 
         # If labels are sparse, turn them into one-hot vector
         if len(y_true.shape) == 1:
+            print("inside this if statement", file=sys.__stdout__)
             y_true = np.eye(labels)[y_true]
 
         # Calculate gradient
