@@ -297,7 +297,7 @@ def grid_search(
     param_grid: Dict[str, Iterable],
     *,
     num_classes: int,
-    max_epochs: int = 100,
+    max_epochs: int = 1000,
 ):
     keys = list(param_grid)
     best_acc, best_model, best_cfg = -np.inf, None, {}
@@ -362,7 +362,7 @@ def run_experiment(
     param_grid = {
         "layer_sizes": [[64, 32], [128, 64, 32], [64, 64]],
         "activation": ["relu"],
-        "lr": [1e-2, 5e-3],
+        "lr": [1],
         "momentum": [0.0, 0.9],
     }
 
