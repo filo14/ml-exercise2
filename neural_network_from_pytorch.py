@@ -1,91 +1,126 @@
-import pandas as pd
+# pytorch nn for titanic + german credit datasets
+# code and comments are all lower case, just like a typical uni student
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import numpy as np
+from sklearn.metrics import accuracy_score, precision_score, recall_score
+from sklearn.model_selection import train_test_split
 
-# --- 1. Load Titanic Data ---
-X_train = pd.read_csv('titanic_X_train_scaled.csv').values.astype(np.float32)
-X_test = pd.read_csv('titanic_X_test_scaled.csv').values.astype(np.float32)
-y_train = pd.read_csv('titanic_y_train.csv').values.flatten().astype(np.int64)
-y_test = pd.read_csv('titanic_y_test.csv').values.flatten().astype(np.int64)
+import load_titanic_data
+import load_german_credit_data
+import time
 
-X_train = torch.from_numpy(X_train)
-X_test = torch.from_numpy(X_test)
-y_train = torch.from_numpy(y_train)
-y_test = torch.from_numpy(y_test)
 
-# --- 2. Define MLP Model ---
-class TitanicMLP(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim, activation='relu'):
+# define a mlp
+class MLP(nn.Module):
+    def __init__(self, n_in, n_hid, n_out, act="relu"):
         super().__init__()
-        self.fc1 = nn.Linear(input_dim, hidden_dim)
-        self.act1 = {'relu': nn.ReLU(), 'tanh': nn.Tanh(), 'sigmoid': nn.Sigmoid()}[activation]
-        self.fc2 = nn.Linear(hidden_dim, output_dim)
-
+        self.fc1 = nn.Linear(n_in, n_hid)
+        if act == "relu":
+            self.act1 = nn.ReLU()
+        elif act == "tanh":
+            self.act1 = nn.Tanh()
+        elif act == "sigmoid":
+            self.act1 = nn.Sigmoid()
+        else:
+            self.act1 = nn.ReLU()
+        self.fc2 = nn.Linear(n_hid, n_out)
     def forward(self, x):
         x = self.fc1(x)
         x = self.act1(x)
         x = self.fc2(x)
         return x
 
-# --- 3. Parameter & RAM Counting ---
-def count_params_and_ram(model):
-    num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    ram_bytes = sum(p.numel() * p.element_size() for p in model.parameters())
-    print(f"Learnable parameters: {num_params}")
-    print(f"Estimated RAM for parameters: {ram_bytes / 1024:.2f} KB ({ram_bytes / (1024**2):.2f} MB)")
 
-# --- 4. Experiments ---
-hidden_dims = [8, 16, 32]
-activations = ['relu', 'tanh', 'sigmoid']
-epochs = 30
+# count params and estimate ram (float32)
+def param_count_and_ram(model):
+    p = sum([w.numel() for w in model.parameters() if w.requires_grad])
+    ram = sum([w.numel() * w.element_size() for w in model.parameters() if w.requires_grad])
+    print(f"total parameters: {p}")
+    print(f"estimated vram usage (float32): {ram/1024:.2f} KB ({ram/1024/1024:.2f} MB)")
+    return p, ram
 
-results = []
-
-for hidden_dim in hidden_dims:
-    for activation in activations:
-        print(f"\n=== Hidden nodes: {hidden_dim} | Activation: {activation} ===")
-        input_dim = X_train.shape[1]
-        output_dim = len(torch.unique(y_train))
-
-        model = TitanicMLP(input_dim, hidden_dim, output_dim, activation)
-        criterion = nn.CrossEntropyLoss()
-        optimizer = optim.Adam(model.parameters(), lr=0.01)
-
-        count_params_and_ram(model)
-
-        best_test_acc = 0
-
-        for epoch in range(epochs):
-            model.train()
-            optimizer.zero_grad()
-            outputs = model(X_train)
-            loss = criterion(outputs, y_train)
-            loss.backward()
-            optimizer.step()
-
-            # Train accuracy
+# function to train and evaluate model (prints similar info as nn from scratch code)
+def train_and_report(X_tr, y_tr, X_val, y_val, X_test, y_test, n_hid=32, act="relu", epochs=100):
+    n_in = X_tr.shape[1]
+    n_out = int(y_tr.max() + 1)
+    model = MLP(n_in, n_hid, n_out, act)
+    loss_fn = nn.CrossEntropyLoss()
+    optimizer = optim.SGD(model.parameters(), lr=1e-2, momentum=0.9)
+    print(f"\nmlp config: hidden={n_hid}, activation={act}, epochs={epochs}")
+    pcount, vram = param_count_and_ram(model)
+    # timing
+    start_ts = time.perf_counter()
+    for epoch in range(epochs):
+        model.train()
+        optimizer.zero_grad()
+        outputs = model(X_tr)
+        loss = loss_fn(outputs, y_tr)
+        loss.backward()
+        optimizer.step()
+        if epoch % (epochs//10) == 0 or epoch == epochs - 1:
             _, preds = torch.max(outputs, 1)
-            train_acc = (preds == y_train).float().mean().item()
+            acc = (preds == y_tr).float().mean().item()
+            print(f"epoch {epoch:04d}: train loss={loss.item():.4f} train acc={acc:.4f}")
+    train_time_ms = (time.perf_counter() - start_ts) * 1000
+    print(f"total training time: {train_time_ms:.2f} ms")
+    # eval val
+    model.eval()
+    with torch.no_grad():
+        val_logits = model(X_val)
+        val_pred = val_logits.argmax(dim=1)
+        val_acc = accuracy_score(y_val.cpu(), val_pred.cpu())
+        val_prec = precision_score(y_val.cpu(), val_pred.cpu())
+        val_rec = recall_score(y_val.cpu(), val_pred.cpu())
+        print(f"validation accuracy: {val_acc:.4f}")
+        print(f"validation precision: {val_prec:.4f}")
+        print(f"validation recall: {val_rec:.4f}")
+        # test
+        test_logits = model(X_test)
+        test_pred = test_logits.argmax(dim=1)
+        test_acc = accuracy_score(y_test.cpu(), test_pred.cpu())
+        test_prec = precision_score(y_test.cpu(), test_pred.cpu())
+        test_rec = recall_score(y_test.cpu(), test_pred.cpu())
+        print(f"test accuracy: {test_acc:.4f}")
+        print(f"test precision: {test_prec:.4f}")
+        print(f"test recall: {test_rec:.4f}")
+    print("total parameters:", pcount)
+    print("estimated vram usage (float32):", f"{vram/1024:.2f} KB")
+    return {
+        "val_acc": val_acc, "val_prec": val_prec, "val_rec": val_rec,
+        "test_acc": test_acc, "test_prec": test_prec, "test_rec": test_rec,
+        "params": pcount, "vram": vram, "train_time_ms": train_time_ms
+    }
 
-            # Test accuracy
-            model.eval()
-            with torch.no_grad():
-                test_outputs = model(X_test)
-                test_loss = criterion(test_outputs, y_test).item()
-                _, test_preds = torch.max(test_outputs, 1)
-                test_acc = (test_preds == y_test).float().mean().item()
-            if test_acc > best_test_acc:
-                best_test_acc = test_acc
+# -------------------------------------
+# helper for loading and splitting data (just like the llm from scratch code)
+def load_and_split(loader):
+    X_train, y_train, X_test, y_test = loader()
+    X_tr, X_val, y_tr, y_val = train_test_split(X_train, y_train, test_size=0.2, stratify=y_train, random_state=42)
+    X_tr = torch.tensor(X_tr, dtype=torch.float32)
+    X_val = torch.tensor(X_val, dtype=torch.float32)
+    X_test = torch.tensor(X_test, dtype=torch.float32)
+    y_tr = torch.tensor(y_tr, dtype=torch.long)
+    y_val = torch.tensor(y_val, dtype=torch.long)
+    y_test = torch.tensor(y_test, dtype=torch.long)
+    return X_tr, y_tr, X_val, y_val, X_test, y_test
 
-            if epoch % 10 == 0 or epoch == epochs - 1:
-                print(f"Epoch {epoch:02d} | Train Acc: {train_acc:.4f} | Test Acc: {test_acc:.4f}")
-
-        results.append({'hidden_dim': hidden_dim, 'activation': activation, 'best_test_acc': best_test_acc})
-
-print("\n=== Summary of Experiments ===")
-for r in results:
-    print(f"Hidden: {r['hidden_dim']:2d}, Activation: {r['activation']:7s} | Best Test Accuracy: {r['best_test_acc']:.4f}")
-
-print("\nDone.")
+# -------------------------------------
+# main: try a couple configs on both datasets
+if __name__ == "__main__":
+    configs = [
+        {"n_hid": 32, "act": "relu"},
+        {"n_hid": 32, "act": "tanh"},
+        {"n_hid": 64, "act": "relu"},
+    ]
+    # titanic
+    print("\n================ TITANIC =================")
+    X_tr, y_tr, X_val, y_val, X_test, y_test = load_and_split(load_titanic_data.load_titanic_dataset)
+    for cfg in configs:
+        train_and_report(X_tr, y_tr, X_val, y_val, X_test, y_test, n_hid=cfg["n_hid"], act=cfg["act"], epochs=100)
+    # german credit
+    print("\n================ GERMAN CREDIT =================")
+    X_tr, y_tr, X_val, y_val, X_test, y_test = load_and_split(load_german_credit_data.load_german_credit_data_dataset)
+    for cfg in configs:
+        train_and_report(X_tr, y_tr, X_val, y_val, X_test, y_test, n_hid=cfg["n_hid"], act=cfg["act"], epochs=100)
+    print("\ndone.")
