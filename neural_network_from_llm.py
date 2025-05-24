@@ -353,10 +353,6 @@ def load_titanic_dataset():
 # Experiment helper
 # -----------------------------------------------------------------------------
 
-# -----------------------------------------------------------------------------
-# Experiment helper
-# -----------------------------------------------------------------------------
-
 def run_experiment(
     name: str,
     loader_fn: Callable[[], Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
