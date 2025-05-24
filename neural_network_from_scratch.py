@@ -357,6 +357,8 @@ class Grid_Search:
                         learning_rate_options,
                         print_every_train=100,
                         output_file_prefix="predictions"):
+        
+        start_time_grid_search = time.time()
 
         input_shape = X_train.shape[1]
         output_classes = len(np.unique(y_train))
@@ -418,6 +420,9 @@ class Grid_Search:
             print(f.read())
             print(f"Params:\n{ best_params}")
             print("\n------------------------\n")
+        
+        end_time_grid_search = time.time()
+        print(f"Grid Search finished in {((end_time_grid_search - start_time_grid_search) * 1000):.3f} ms")
 
 
 X_train, y_train, X_test, y_test = load_titanic_data.load_titanic_dataset()
@@ -433,7 +438,7 @@ neurons_per_layer = [
     [64, 64, 64]
 ]
 activation_functions = {'ReLU': Activation_ReLU, 'Sigmoid': Activation_Sigmoid}
-learning_rates = [0.5, 1, 2]
+learning_rates = [1]
 epochs = [100, 500, 1000]
 
 
@@ -457,7 +462,7 @@ neurons_per_layer = [
     [64, 64, 64]
 ]
 epochs = [100, 500, 1000]
-learning_rates = [0.5, 1, 2]
+learning_rates = [1]
 activation_functions = {'ReLU': Activation_ReLU, 'Sigmoid': Activation_Sigmoid}
 
 

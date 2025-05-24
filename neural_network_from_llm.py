@@ -282,8 +282,16 @@ class NeuralNetwork:
     def parameter_count(self):
         return sum(p.size for p in self.optimizer.params)
 
-    def vram_usage(self, bytes_per_param: int = 4):
-        return self.parameter_count() * bytes_per_param / 1024.0  # KiB
+    
+    def vram_usage(self):
+        total_bytes = 0
+        for layer in self.layers:
+            if isinstance(layer, Dense):
+                weight_bytes = layer.W.size * layer.W.dtype.itemsize
+                bias_bytes = layer.b.size * layer.b.dtype.itemsize
+                total_bytes += weight_bytes + bias_bytes
+
+        return total_bytes
 
 # -----------------------------------------------------------------------------
 # Grid‑search helper
@@ -297,11 +305,12 @@ def grid_search(
     param_grid: Dict[str, Iterable],
     *,
     num_classes: int,
-    max_epochs: int = 1000,
+    # max_epochs: int = 1000, # Removed this parameter
 ):
     keys = list(param_grid)
-    best_acc, best_model, best_cfg = -np.inf, None, {}
+    best_acc, best_model, best_cfg, best_runtime = -np.inf, None, {}, np.inf
     for values in itertools.product(*param_grid.values()):
+        start_time = time.time()
         cfg = dict(zip(keys, values))
         model = NeuralNetwork(
             layer_sizes=cfg["layer_sizes"],
@@ -310,12 +319,16 @@ def grid_search(
             lr=cfg.get("lr", 1e-2),
             momentum=cfg.get("momentum", 0.0),
         )
-        model.fit(X_train, y_train, epochs=max_epochs, verbose=False)
+        # Use epochs from the current configuration (cfg)
+        epochs_for_fit = cfg.get("epochs", 1000) # Default to 1000 if not in cfg
+        model.fit(X_train, y_train, epochs=epochs_for_fit, verbose=False)
         acc = model.score(X_val, y_val)
         if acc > best_acc:
             best_acc, best_model, best_cfg = acc, model, cfg
             print(f"New best val acc {acc:.4f} with cfg {cfg}")
-    return best_model, best_cfg
+            end_time = time.time()
+            best_runtime = f"{((end_time - start_time)* 1000):.3f}"
+    return best_model, best_cfg, best_runtime
 
 # -----------------------------------------------------------------------------
 # Data‑loader – identical to the snippet provided by the exercise sheet
@@ -335,6 +348,10 @@ def load_titanic_dataset():
     y_test = y_test_df["Survived"].to_numpy(dtype=np.int32).reshape(-1)
 
     return X_train, y_train, X_test, y_test
+
+# -----------------------------------------------------------------------------
+# Experiment helper
+# -----------------------------------------------------------------------------
 
 # -----------------------------------------------------------------------------
 # Experiment helper
@@ -360,21 +377,26 @@ def run_experiment(
 
     # 2) ----------------------------------------------------------- grid search
     param_grid = {
-        "layer_sizes": [[64, 32], [128, 64, 32], [64, 64]],
-        "activation": ["relu"],
+        "layer_sizes": [[32],
+    [64, 32],
+    [128, 64, 32],
+    [256, 128, 64],
+    [64, 64, 64]],
+        "activation": ["relu", "sigmoid"],
         "lr": [1],
-        "momentum": [0.0, 0.9],
+        "momentum": [0.0],
+        "epochs": [100, 500, 1000], # Add epochs as an array here
     }
 
     start = time.perf_counter()
-    best_model, best_cfg = grid_search(
+    best_model, best_cfg, runtime = grid_search(
         X_tr,
         y_tr,
         X_val,
         y_val,
         param_grid,
         num_classes=2 if name == "Titanic" else 2,
-        max_epochs=500,
+        # max_epochs=500, # Remove this line
     )
     gsearch_time = (time.perf_counter() - start) * 1_000
     print(f"Grid‑search done in {gsearch_time:,.0f} ms")
@@ -384,7 +406,8 @@ def run_experiment(
     print("\nValidation accuracy:", best_model.score(X_val, y_val))
     print("Test accuracy      :", best_model.score(X_test, y_test))
     print("Total parameters   :", best_model.parameter_count())
-    print("VRAM (float32)     :", f"{best_model.vram_usage():.2f} KiB")
+    print("VRAM (float32)     :", f"{best_model.vram_usage():.2f} bytes")
+    print("Runtime:            ", runtime)
 
     y_val_pred = best_model.predict(X_val)
     y_test_pred = best_model.predict(X_test)
@@ -394,6 +417,7 @@ def run_experiment(
     print(
         f"Test precision / recall      : {precision_score(y_test, y_test_pred):.4f} / {recall_score(y_test, y_test_pred):.4f}"
     )
+
 
 # -----------------------------------------------------------------------------
 # Main entry point
