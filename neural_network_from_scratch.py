@@ -422,6 +422,9 @@ class Grid_Search:
 
 X_train, y_train, X_test, y_test = load_titanic_data.load_titanic_dataset()
 
+
+# below the paramters can be set
+
 neurons_per_layer = [
     [32],
     [64, 32],
@@ -429,17 +432,23 @@ neurons_per_layer = [
     [256, 128, 64],
     [64, 64, 64]
 ]
-
+activation_functions = {'ReLU': Activation_ReLU, 'Sigmoid': Activation_Sigmoid}
+learning_rates = [0.5, 1, 2]
 epochs = [100, 500, 1000]
+
+
+# runs the model
 
 grid_search = Grid_Search()
 grid_search.run_grid_search(X_train, y_train, X_test, y_test, neurons_per_layer, epochs, 
-                            {'ReLU': Activation_ReLU, 'Sigmoid': Activation_Sigmoid}, 
-                            [1], output_file_prefix="./titanic-predictions/prediction")
+                            activation_functions, 
+                            learning_rates, output_file_prefix="./titanic-predictions/prediction")
 
 
 X_train, y_train, X_test, y_test = load_german_credit_data.load_german_credit_data_dataset()
 
+# below the paramters can be set
+
 neurons_per_layer = [
     [32],
     [64, 32],
@@ -447,10 +456,14 @@ neurons_per_layer = [
     [256, 128, 64],
     [64, 64, 64]
 ]
-
 epochs = [100, 500, 1000]
+learning_rates = [0.5, 1, 2]
+activation_functions = {'ReLU': Activation_ReLU, 'Sigmoid': Activation_Sigmoid}
+
+
+# runs the model
 
 grid_search = Grid_Search()
 grid_search.run_grid_search(X_train, y_train, X_test, y_test, neurons_per_layer, epochs, 
-                            {'ReLU': Activation_ReLU, 'Sigmoid': Activation_Sigmoid}, 
-                            [1], output_file_prefix="./german-credit-predictions/prediction")
+                            activation_functions, 
+                            learning_rates, output_file_prefix="./german-credit-predictions/prediction")
