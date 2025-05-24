@@ -154,7 +154,6 @@ class Loss_CategoricalCrossentropy:
 
         # If labels are sparse, turn them into one-hot vector
         if len(y_true.shape) == 1:
-            print("inside this if statement", file=sys.__stdout__)
             y_true = np.eye(labels)[y_true]
 
         # Calculate gradient
@@ -365,6 +364,7 @@ class Grid_Search:
         count = 0
         highest_accuracy = 0
         highest_output = ""
+        best_params = ""
         
         original_stdout = sys.stdout
         for layers_neurons in neurons_per_layer_options:
@@ -390,6 +390,7 @@ class Grid_Search:
                             accuracy=Accuracy_Categorical()
                         )
 
+                        params = f"Layer count: {str(layers_neurons)}\nEpochs: {epochs_train}\nActivation Function: {activation_name} (class '{Activation_Class.__name__}')\nLearning rate: {str(learning_rate)}"
                         output_file=f"{output_file_prefix}_{count}_L{'-'.join(map(str, layers_neurons))}_E{epochs_train}_A{activation_name}_LR{str(learning_rate).replace('.', '')}"
                         with open(f"{output_file}.txt", 'w') as f:
                             sys.stdout = f
@@ -407,6 +408,7 @@ class Grid_Search:
                             if (accuracy > highest_accuracy):
                                 highest_accuracy = accuracy
                                 highest_output = output_file
+                                best_params = params
                             
                             count += 1
                         sys.stdout = original_stdout
@@ -414,6 +416,8 @@ class Grid_Search:
         with open(f"{highest_output}.txt", "r") as f:
             print("Model with highest accuracy: ")
             print(f.read())
+            print(f"Params:\n{ best_params}")
+            print("\n------------------------\n")
 
 
 X_train, y_train, X_test, y_test = load_titanic_data.load_titanic_dataset()
