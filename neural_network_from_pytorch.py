@@ -12,8 +12,6 @@ import load_german_credit_data
 def count_params_and_ram(model):
     params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     ram = sum(p.numel() * p.element_size() for p in model.parameters() if p.requires_grad)
-    print("learnable parameters:", params)
-    print("vram (float32):", round(ram/1024, 2), "KB\n")
     return params, ram
 
 # simple mlp
@@ -64,13 +62,18 @@ def train_eval_torch(X_train, y_train, X_test, y_test,
     runtime_ms = (time.time() - t0) * 1000
 
     model.eval()
-    with torch.no_grad():
+    with torch.no_grad():   
+        # full-train forward pass
+        train_logits = model(X_tr)
+        train_pred   = train_logits.argmax(1)
+        train_acc    = (train_pred == y_tr).float().mean().item()
+   
         test_logits = model(X_test_t)
         test_pred = test_logits.argmax(1).cpu().numpy()
         test_acc = accuracy_score(y_test_t.numpy(), test_pred)
         test_loss = loss_fn(test_logits, y_test_t).item()
     params, ram = count_params_and_ram(model)
-    return test_acc, test_loss, runtime_ms, params, ram
+    return test_acc, test_loss, runtime_ms, params, ram, train_acc
 
 # grid search (console only)
 
@@ -84,28 +87,26 @@ def run_grid_search_torch(X_train, y_train, X_test, y_test, dataset_name,
     best_combo = None
     best_stats = None  # (train_acc, loss, runtime_ms, params, ram)
     run_id = 0
+    train_acc=-1
 
     for hidden in hidden_layer_sizes_options:
         for epochs in epochs_options:
             for act in activation_options:
                 for lr in learning_rate_options:
-                    acc, loss, run_ms, params, ram = train_eval_torch(
+                    acc, loss, run_ms, params, ram, train_acc = train_eval_torch(
                         X_train, y_train, X_test, y_test,
                         hidden_dims=hidden, activation=act, epochs=epochs, lr=lr)
-
-                    # note: train_eval_torch returns test acc; we approximate train acc via 1-loss? no -> set train_acc placeholder
-                    train_acc_placeholder = 1 - loss  # rough proxy, not exact
 
                     print(
                         f"{dataset_name} | run={run_id} | hidden_layers={hidden} | "
                         f"epochs={epochs} | activation={act} | learning_rate={lr} | "
                         f"test_acc={acc:.3f} | loss={loss:.3f} | runtime_ms={run_ms:.1f} | "
-                        f"params={params} | vram_bytes={ram}")
+                        f"params={params} | vram_bytes={ram}| train_acc={train_acc:.3f}")
 
                     if acc > best_acc:
                         best_acc = acc
                         best_combo = (hidden, epochs, act, lr)
-                        best_stats = (train_acc_placeholder, loss, run_ms, params, ram)
+                        best_stats = (train_acc, loss, run_ms, params, ram)
                     run_id += 1
 
     print("\nGRID SEARCH RESULTS:")
@@ -114,7 +115,7 @@ def run_grid_search_torch(X_train, y_train, X_test, y_test, dataset_name,
     print(f"Hidden Layers: {best_combo[0]}")
     print(f"Epochs: {best_combo[1]}")
     print(f"Activation: {best_combo[2]}")
-    print(f"Learning Rate: {best_combo[3]}")
+    print(f"Learning Rate: {best_combo[3]}")    
     print(f"Train Accuracy: {best_stats[0]:.4f}")
     print(f"Test Accuracy: {best_acc:.4f}")
     print(f"Loss: {best_stats[1]:.4f}")
@@ -133,7 +134,7 @@ if __name__ == "__main__":
         (256, 128, 64),
         (64, 64, 64)
     ]
-    lr_space = [1.0]
+    lr_space = [1]
     epoch_space = [100, 500]
     act_space = ["relu", "sigmoid"]
 
