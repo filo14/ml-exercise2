@@ -24,7 +24,8 @@ def run_grid_search_sklearn(
         dataset_name,
         hidden_layer_sizes_options,
         learning_rate_options,
-        max_iter_options):
+        max_iter_options,
+        activation_options):
     
 
     start_time_grid_search = time.time()
@@ -34,48 +35,52 @@ def run_grid_search_sklearn(
     best_stats = None  # (train_acc, loss, runtime_ms, mem)
     run_id = 0
 
-    for hidden in hidden_layer_sizes_options:
-        for epochs in max_iter_options:
-            for lr in learning_rate_options:
 
-                t0 = time.time()
-                model = MLPClassifier(hidden_layer_sizes=hidden,
-                                      max_iter=epochs,
-                                      random_state=42,
-                                      learning_rate_init=lr)
-                model.fit(X_train, y_train)
-                train_acc = model.score(X_train, y_train)
+    for activation in activation_options:
+        for hidden in hidden_layer_sizes_options:
+            for epochs in max_iter_options:
+                for lr in learning_rate_options:
 
-                y_prob = model.predict_proba(X_test)
-                y_pred = model.predict(X_test)
+                    t0 = time.time()
+                    model = MLPClassifier(hidden_layer_sizes=hidden,
+                                        max_iter=epochs,
+                                        random_state=42,
+                                        learning_rate_init=lr,
+                                        activation=activation)
+                    model.fit(X_train, y_train)
+                    train_acc = model.score(X_train, y_train)
 
-                loss = log_loss(y_test, y_prob)
-                acc = accuracy_score(y_test, y_pred)
-                t1 = time.time()
+                    y_prob = model.predict_proba(X_test)
+                    y_pred = model.predict(X_test)
 
-                runtime_ms = (t1 - t0) * 1000
-                mem = get_model_memory_usage_sklearn(model)
+                    loss = log_loss(y_test, y_prob)
+                    acc = accuracy_score(y_test, y_pred)
+                    t1 = time.time()
 
-                # print line
-                print(
-                    f"{dataset_name} | run={run_id} | hidden_layers={hidden} | "
-                    f"epochs={epochs} | learning_rate={lr} | "
-                    f"train_acc={train_acc:.3f} | test_acc={acc:.3f} | "
-                    f"loss={loss:.3f} | runtime_ms={runtime_ms:.1f} | mem_bytes={mem}"
-                )
+                    runtime_ms = (t1 - t0) * 1000
+                    mem = get_model_memory_usage_sklearn(model)
 
-                if acc > best_acc:
-                    best_acc = acc
-                    best_params = (hidden, epochs, lr)
-                    best_stats = (train_acc, loss, runtime_ms, mem)
+                    # print line
+                    print(
+                        f"{dataset_name} | run={run_id} | hidden_layers={hidden} | "
+                        f"epochs={epochs} | learning_rate={lr} | "
+                        f"train_acc={train_acc:.3f} | test_acc={acc:.3f} | "
+                        f"loss={loss:.3f} | runtime_ms={runtime_ms:.1f} | mem_bytes={mem}"
+                    )
 
-                run_id += 1
+                    if acc > best_acc:
+                        best_acc = acc
+                        best_params = (hidden, epochs, lr)
+                        best_stats = (train_acc, loss, runtime_ms, mem, activation)
+
+                    run_id += 1
 
     print("\nGRID SEARCH RESULTS:")
     print("====================")
     print("Model with highest accuracy:")
     print(f"Hidden Layers: {best_params[0]}")
     print(f"Epochs: {best_params[1]}")
+    print(f"Activation function:  {best_stats[4]}")
     print(f"Learning Rate: {best_params[2]}")
     print(f"Train Accuracy: {best_stats[0]:.4f}")
     print(f"Test Accuracy: {best_acc:.4f}")
@@ -99,63 +104,21 @@ grid_hidden_layer_sizes = [
 ]
 
 grid_learning_rates = [1]
-
+activation_options = ['relu', 'logistic']
 grid_max_iters = [100, 500, 1000]
 
 # titanic baseline
 
 X_train, y_train, X_test, y_test = load_titanic_data.load_titanic_dataset()
 
-start_time = time.time()
-model = MLPClassifier(hidden_layer_sizes=(32,), max_iter=100, random_state=42, learning_rate_init=1)
-model.fit(X_train, y_train)
-train_acc = model.score(X_train, y_train)
-
-y_prob = model.predict_proba(X_test)
-y_pred = model.predict(X_test)
-
-loss = log_loss(y_test, y_prob)
-accuracy = accuracy_score(y_test, y_pred)
-
-end_time = time.time()
-runtime = end_time - start_time
-memory_usage = get_model_memory_usage_sklearn(model)
-
-print("\nTitanic dataset results")
-print(f"Runtime={runtime:.4f}")
-print(f"Memory Usage={memory_usage:.2f}")
-print(f"Training Accuracy={train_acc:.4f}")
-print(f"Loss={loss:.4f}")
-print(f"Test Accuracy={accuracy:.4f}\n")
 
 run_grid_search_sklearn(X_train, y_train, X_test, y_test, "titanic",
-                        grid_hidden_layer_sizes, grid_learning_rates, grid_max_iters)
+                        grid_hidden_layer_sizes, grid_learning_rates, grid_max_iters, activation_options)
 
 # german credit baseline
 
 X_train, y_train, X_test, y_test = load_german_credit_data.load_german_credit_data_dataset()
 
-start_time = time.time()
-model = MLPClassifier(hidden_layer_sizes=(32,), max_iter=100, random_state=42, learning_rate_init=1)
-model.fit(X_train, y_train)
-train_acc = model.score(X_train, y_train)
-
-y_prob = model.predict_proba(X_test)
-y_pred = model.predict(X_test)
-
-loss = log_loss(y_test, y_prob)
-accuracy = accuracy_score(y_test, y_pred)
-
-end_time = time.time()
-runtime = end_time - start_time
-memory_usage = get_model_memory_usage_sklearn(model)
-
-print("\nGerman credit dataset results")
-print(f"Runtime={runtime:.4f}")
-print(f"Memory Usage={memory_usage:.2f}")
-print(f"Training Accuracy={train_acc:.4f}")
-print(f"Loss={loss:.4f}")
-print(f"Test Accuracy={accuracy:.4f}\n")
 
 run_grid_search_sklearn(X_train, y_train, X_test, y_test, "german credit",
-                        grid_hidden_layer_sizes, grid_learning_rates, grid_max_iters)
+                        grid_hidden_layer_sizes, grid_learning_rates, grid_max_iters, activation_options)
