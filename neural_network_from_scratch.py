@@ -320,11 +320,11 @@ class Model:
         if output_file is not None:
             np.savetxt(f'{output_file}', predictions, delimiter=',', fmt='%d', header='Predicted_Survived', comments='')
 
-        print(f'Test Set Results: ' +
-                f'Accuracy: {accuracy:.3f}, ' +
-                f'Precision: {precision:.3f}, ' +
-                f'Recall: {recall:.3f}, ' +
-                f'Loss: {loss:.3f}')
+        print(f'Test Set Results:\n' +
+                f'\tAccuracy: {accuracy:.3f},\n' +
+                f'\tPrecision: {precision:.3f},\n' +
+                f'\tRecall: {recall:.3f},\n' +
+                f'\tLoss: {loss:.3f}\n')
         
         return accuracy
 
