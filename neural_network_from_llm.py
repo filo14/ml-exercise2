@@ -20,7 +20,7 @@ from sklearn.model_selection import train_test_split
 
 import load_german_credit_data
 import load_titanic_data
-
+np.random.seed(38)
 # -----------------------------------------------------------------------------
 # Globals
 # -----------------------------------------------------------------------------
@@ -93,7 +93,7 @@ class Softmax(Activation):
 
 class Dense:
     def __init__(self, in_features: int, out_features: int, *, rng: np.random.Generator | None = None):
-        rng = rng or np.random.default_rng()
+        rng = rng or np.random.default_rng(38)
         scale = np.sqrt(2.0 / (in_features + out_features))
         self.W = rng.normal(0.0, scale, size=(in_features, out_features)).astype(DTYPE)
         self.b = np.zeros(out_features, dtype=DTYPE)
@@ -191,7 +191,7 @@ class NeuralNetwork:
         self._hidden_act_cls = hidden_act_cls
         self._layer_sizes = list(layer_sizes)
         self._num_classes = num_classes
-        self._rng = rng or np.random.default_rng()
+        self._rng = rng or np.random.default_rng(seed=38)
 
         # will be built lazily once input dimension known
         self._deferred = True

@@ -6,7 +6,7 @@ import sys
 import load_german_credit_data
 import load_titanic_data
 
-
+np.random.seed(42)
 class Layer_Dense:
     """
     A hidden layer in the Neural Network.
