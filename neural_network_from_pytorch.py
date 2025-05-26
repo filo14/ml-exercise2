@@ -3,10 +3,10 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from sklearn.metrics import accuracy_score
-from sklearn.model_selection import train_test_split
 import load_titanic_data
 import load_german_credit_data
-
+torch.manual_seed(38)
+torch.cuda.manual_seed_all(38)
 # helper count params and ram in bytes
 
 def count_params_and_ram(model):
@@ -36,12 +36,11 @@ class SimpleMLP(nn.Module):
 
 def train_eval_torch(X_train, y_train, X_test, y_test,
                      hidden_dims=(32,), activation="relu", epochs=100, lr=1.0):
-    X_tr, X_val, y_tr, y_val = train_test_split(X_train, y_train, test_size=0.2,
-                                                stratify=y_train, random_state=42)
-    X_tr = torch.tensor(X_tr, dtype=torch.float32)
-    y_tr = torch.tensor(y_tr, dtype=torch.long)
-    X_val = torch.tensor(X_val, dtype=torch.float32)
-    y_val = torch.tensor(y_val, dtype=torch.long)
+
+    X_tr = torch.tensor(X_train, dtype=torch.float32)
+    y_tr = torch.tensor(y_train, dtype=torch.long)
+    X_val = torch.tensor(X_test, dtype=torch.float32)
+    y_val = torch.tensor(y_test, dtype=torch.long)
     X_test_t = torch.tensor(X_test, dtype=torch.float32)
     y_test_t = torch.tensor(y_test, dtype=torch.long)
 
