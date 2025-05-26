@@ -135,7 +135,7 @@ if __name__ == "__main__":
         (64, 64, 64)
     ]
     lr_space = [1]
-    epoch_space = [100, 500]
+    epoch_space = [100, 500, 1000]
     act_space = ["relu", "sigmoid"]
 
     print("Titanic dataset results")
